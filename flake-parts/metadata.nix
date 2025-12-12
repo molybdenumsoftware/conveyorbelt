@@ -1,4 +1,4 @@
-{ lib, ... }:
+{ lib, config, ... }:
 {
   options.metadata = {
     title = lib.mkOption {
@@ -16,4 +16,5 @@
       };
     };
   };
+  config.flake-file.description = config.metadata.description.plaintext;
 }
