@@ -1,0 +1,35 @@
+{
+  "jobs": {
+    "default": {
+      "runs-on": "ubuntu-latest",
+      "steps": [
+        {
+          "uses": "actions/checkout@main"
+        },
+        {
+          "name": "Install Nix",
+          "uses": "nixbuild/nix-quick-install-action@master",
+          "with": {
+            "nix_conf": "keep-env-derivations = true\nkeep-outputs = true\n"
+          }
+        },
+        {
+          "name": "Set up Nix cache",
+          "uses": "nix-community/cache-nix-action@main",
+          "with": {
+            "primary-key": "nix-${{ runner.os }}"
+          }
+        },
+        {
+          "name": "nix flake check",
+          "run": "nix flake -vv --print-build-logs --accept-flake-config check"
+        }
+      ]
+    }
+  },
+  "name": "nix flake check",
+  "on": {
+    "push": {},
+    "workflow_call": {}
+  }
+}
