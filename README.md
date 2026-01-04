@@ -2,6 +2,9 @@
 
 CLI for web development that watches source, invokes rebuild, statically serves and triggers page reload
 
+> [!CAUTION]
+> This software is not yet ready for use
+
 ## Usage
 
 ```

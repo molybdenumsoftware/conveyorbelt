@@ -16,6 +16,9 @@
 
               ${config.metadata.description}
 
+              > [!CAUTION]
+              > This software is not yet ready for use
+
               ## Usage
 
               ```
