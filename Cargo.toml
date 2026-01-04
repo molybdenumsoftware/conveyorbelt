@@ -1,0 +1,27 @@
+[package]
+edition = "2024"
+name = "conveyorbelt"
+version = "0.0.0"
+
+[dependencies]
+anyhow = "*"
+chromiumoxide = "*"
+clap = { features = ["derive"], version = "*" }
+derive_more = { features = ["deref", "deref_mut", "display"], version = "*" }
+futures = "*"
+http = "0.2"
+hyper = { features = ["server"], version = "0" }
+serde = "*"
+serde_json = "*"
+static-web-server = { default-features = false, version = "*" }
+tempfile = "*"
+tokio = { features = ["io-std", "io-util", "process"], version = "*" }
+tracing = "*"
+tracing-subscriber = { features = ["env-filter"], version = "*" }
+
+[dev-dependencies]
+indoc = "*"
+maud = "*"
+nix = { features = ["signal"], version = "*" }
+static_init = "*"
+sysinfo = { default-features = false, features = ["system"], version = "*" }

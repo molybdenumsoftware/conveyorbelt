@@ -3,18 +3,12 @@
   options.metadata = {
     title = lib.mkOption {
       type = lib.types.singleLineStr;
-      default = "wabuisere";
+      default = "conveyorbelt";
     };
-    description = {
-      plaintext = lib.mkOption {
-        type = lib.types.singleLineStr;
-        default = "CLI for web development that watches source, invokes rebuild, statically serves and triggers page reload";
-      };
-      markdown = lib.mkOption {
-        type = lib.types.singleLineStr;
-        default = "CLI for web development that **wa**tches source, invokes re**bui**ld, statically **se**rves and triggers page **re**load";
-      };
+    description = lib.mkOption {
+      type = lib.types.singleLineStr;
+      default = "CLI for web development that watches source, invokes rebuild, statically serves and triggers page reload";
     };
   };
-  config.flake-file.description = config.metadata.description.plaintext;
+  config.flake-file.description = config.metadata.description;
 }
