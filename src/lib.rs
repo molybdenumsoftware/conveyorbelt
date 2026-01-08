@@ -1,3 +1,4 @@
+// TODO can this file be loaded as two distinct modules, one in the program and another in the tests?
 use std::io::BufRead as _;
 
 use anyhow::Context as _;
@@ -15,41 +16,32 @@ impl StateForTesting {
     pub const ENV_VAR: &str = "_PRINT_STATE_FOR_TESTING";
 }
 
-#[derive(Debug, Copy, Clone, derive_more::Display)]
-pub enum Stdoutput {
-    #[display("err")]
-    Err,
-    #[display("out")]
-    Out,
+pub trait ForStdoutputLine {
+    fn for_stderr_line(&mut self, f: fn(line: &str)) -> anyhow::Result<()>;
+    fn for_stdout_line(&mut self, f: fn(line: &str)) -> anyhow::Result<()>;
 }
 
-pub trait CaptureStdoutsLines {
-    fn capture_stdouts_lines(
-        &mut self,
-        f: fn(stdoutput: Stdoutput, line: &str),
-    ) -> anyhow::Result<()>;
-}
-
-impl CaptureStdoutsLines for std::process::Child {
-    fn capture_stdouts_lines(
-        &mut self,
-        f: fn(stdoutput: Stdoutput, line: &str),
-    ) -> anyhow::Result<()> {
+impl ForStdoutputLine for std::process::Child {
+    fn for_stderr_line(&mut self, f: fn(line: &str)) -> anyhow::Result<()> {
         let child_stderr = self.stderr.take().context("Child stderr missing")?;
         let mut child_stderr_lines = std::io::BufReader::new(child_stderr).lines();
+        std::thread::spawn(move || {
+            loop {
+                if let Some(Ok(line)) = child_stderr_lines.next() {
+                    f(&line);
+                }
+            }
+        });
+        Ok(())
+    }
+
+    fn for_stdout_line(&mut self, f: fn(line: &str)) -> anyhow::Result<()> {
         let child_stdout = self.stdout.take().context("Child stdout missing")?;
         let mut child_stdout_lines = std::io::BufReader::new(child_stdout).lines();
         std::thread::spawn(move || {
             loop {
-                if let Some(Ok(line)) = child_stderr_lines.next() {
-                    f(Stdoutput::Err, &line);
-                }
-            }
-        });
-        std::thread::spawn(move || {
-            loop {
                 if let Some(Ok(line)) = child_stdout_lines.next() {
-                    f(Stdoutput::Out, &line);
+                    f(&line);
                 }
             }
         });
@@ -57,29 +49,30 @@ impl CaptureStdoutsLines for std::process::Child {
     }
 }
 
-pub trait CaptureStdoutLinesAsync {
-    fn capture_stdout_lines(&mut self, f: fn(Stdoutput, &str)) -> anyhow::Result<()>;
-}
-
-impl CaptureStdoutLinesAsync for tokio::process::Child {
-    fn capture_stdout_lines(&mut self, f: fn(Stdoutput, &str)) -> anyhow::Result<()> {
+impl ForStdoutputLine for tokio::process::Child {
+    fn for_stderr_line(&mut self, f: fn(&str)) -> anyhow::Result<()> {
         let child_stderr = self.stderr.take().context("Child stderr missing")?;
-        let child_stdout = self.stdout.take().context("Child stdout missing")?;
         let mut stderr_lines = tokio::io::BufReader::new(child_stderr).lines();
-        let mut stdout_lines = tokio::io::BufReader::new(child_stdout).lines();
 
         tokio::spawn(async move {
             loop {
                 if let Ok(Some(line)) = stderr_lines.next_line().await {
-                    f(Stdoutput::Err, &line);
+                    f(&line);
                 };
             }
         });
 
+        Ok(())
+    }
+
+    fn for_stdout_line(&mut self, f: fn(&str)) -> anyhow::Result<()> {
+        let child_stdout = self.stdout.take().context("Child stdout missing")?;
+        let mut stdout_lines = tokio::io::BufReader::new(child_stdout).lines();
+
         tokio::spawn(async move {
             loop {
                 if let Ok(Some(line)) = stdout_lines.next_line().await {
-                    f(Stdoutput::Out, &line);
+                    f(&line);
                 };
             }
         });

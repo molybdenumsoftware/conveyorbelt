@@ -9,7 +9,7 @@ use std::{
 use anyhow::{Context, anyhow};
 use chromiumoxide::{Browser, BrowserConfig};
 use clap::Parser as _;
-use conveyorbelt::{CaptureStdoutLinesAsync, StateForTesting};
+use conveyorbelt::{ForStdoutputLine, StateForTesting};
 use http::StatusCode;
 use static_web_server::{
     handler::{RequestHandler, RequestHandlerOpts},
@@ -34,39 +34,40 @@ async fn main() {
         .with_env_filter(filter)
         .init();
 
-    info!("starting {}", env!("CARGO_PKG_NAME"));
-
+    info!("{} starting", env!("CARGO_PKG_NAME"));
     let cli = Cli::parse();
-
     debug!("arguments parsed: {cli:?}");
-
     let Cli { build_command } = cli;
 
-    let mut git_toplevel_command = Command::new("git");
+    let mut command = Command::new("git");
+    command.args(["rev-parse", "--show-toplevel"]);
 
-    git_toplevel_command
-        .args(["rev-parse", "--show-toplevel"])
-        .kill_on_drop(true);
-
-    let git_toplevel: String = git_toplevel_command
+    let output = command
         .output()
         .await
-        .with_context(|| format!("failed to run {git_toplevel_command:?}"))
-        .unwrap()
+        .with_context(|| format!("failed to run {command:?}"))
+        .unwrap();
+
+    if !output.status.success() {
+        panic!(
+            "command {:?} exited with {}. stderr: {}",
+            command,
+            output.status,
+            String::from_utf8_lossy(&output.stderr)
+        );
+    }
+
+    let git_toplevel: String = output
         .stdout
         .try_into()
-        .with_context(|| format!("printed non-UTF-8 {git_toplevel_command:?}"))
+        .with_context(|| format!("command printed non-UTF-8: {command:?}"))
         .unwrap();
 
     let git_toplevel = git_toplevel.trim_end().to_string();
-
     debug!("git toplevel obtained: {git_toplevel}");
-
     let mut serve_path: PathBuf = git_toplevel.into();
     serve_path.push(env!("SERVE_DIR"));
-
     debug!("serve path resolved: {serve_path:?}");
-
     let mut build_command = Command::new(build_command);
 
     build_command
@@ -81,8 +82,14 @@ async fn main() {
         .unwrap();
 
     build_process
-        .capture_stdout_lines(|stdoutput, line| {
-            info!("build command {stdoutput}: {line}");
+        .for_stdout_line(|line| {
+            info!("build command stdout: {line}");
+        })
+        .unwrap();
+
+    build_process
+        .for_stderr_line(|line| {
+            info!("build command stderr: {line}");
         })
         .unwrap();
 
@@ -170,8 +177,7 @@ async fn main() {
     debug!("browser data dir: {browser_data_dir:?}");
 
     let browser_config = BrowserConfig::builder()
-        .disable_default_args()
-        .arg("--no-first-run")
+        .with_head()
         // TODO test?
         .respect_https_errors()
         // TODO test?
@@ -224,6 +230,5 @@ async fn main() {
     mem::forget(browser);
 
     server.await.context("server failed").unwrap();
-
     handle.close();
 }

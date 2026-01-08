@@ -1,37 +1,35 @@
 use std::{
+    collections::BTreeSet,
     ffi::OsStr,
     fs::Permissions,
     io::Write,
     net::Ipv4Addr,
-    os::unix::fs::PermissionsExt,
+    os::unix::fs::{PermissionsExt, symlink},
+    path::{Path, PathBuf},
     process::{ExitStatus, Stdio},
 };
 
-use anyhow::Context;
+use anyhow::{Context, anyhow, bail};
 use chromiumoxide::{
     Browser, BrowserConfig, cdp::browser_protocol::network::EventResponseReceived,
 };
-use conveyorbelt::{CaptureStdoutsLines as _, StateForTesting};
+use conveyorbelt::{ForStdoutputLine as _, StateForTesting};
 use futures::StreamExt as _;
 use indoc::formatdoc;
 use maud::{DOCTYPE, html};
 use nix::{sys::signal::Signal, unistd::Pid};
 use sysinfo::{ProcessRefreshKind, RefreshKind};
 use tempfile::{TempDir, TempPath, tempdir};
-use tokio::{
-    io::{AsyncBufReadExt as _, BufReader},
-    task::JoinHandle,
-};
+use tokio::{io::AsyncBufReadExt as _, task::JoinHandle};
 
 #[derive(Debug)]
 struct Subject {
     process: tokio::process::Child,
     state_for_testing: StateForTesting,
-    _git_toplevel: TempDir,
 }
 
 #[derive(Debug, derive_more::Deref, derive_more::DerefMut)]
-struct DroppyChild(std::process::Child);
+struct DroppyChild(Option<std::process::Child>);
 
 trait EnvProvider {
     fn envs(&self) -> impl IntoIterator<Item = (impl AsRef<OsStr>, impl AsRef<OsStr>)>;
@@ -58,27 +56,28 @@ impl Xvfb {
             .spawn()
             .context("failed to spawn weston")?;
 
-        process.capture_stdouts_lines(|stdoutput, line| {
-            eprintln!("Xvfb {stdoutput}: {line}");
+        process.for_stdout_line(|line| {
+            eprintln!("Xvfb stdout: {line}");
         })?;
 
-        Ok(Self(DroppyChild(process)))
+        process.for_stderr_line(|line| {
+            eprintln!("Xvfb stderr: {line}");
+        })?;
+
+        Ok(Self(DroppyChild(Some(process))))
     }
 }
 
 impl EnvProvider for Xvfb {
     fn envs(&self) -> impl IntoIterator<Item = (impl AsRef<OsStr>, impl AsRef<OsStr>)> {
-        let envs: [(&str, &OsStr); _] = [
-            //("XDG_RUNTIME_DIR", self.xdg_runtime_dir.path().as_os_str()),
-            ("DISPLAY", Self::DISPLAY.as_ref()),
-        ];
+        let envs: [(&str, &OsStr); _] = [("DISPLAY", Self::DISPLAY.as_ref())];
         envs
     }
 }
 
 trait Signalable {
     fn signal(&self, signal: Signal) -> anyhow::Result<()>;
-    async fn kill_wait(&mut self, signal: Signal) -> anyhow::Result<ExitStatus>;
+    fn kill_wait(&mut self, signal: Signal) -> impl Future<Output = anyhow::Result<ExitStatus>>;
 }
 
 impl Signalable for std::process::Child {
@@ -110,11 +109,14 @@ impl Signalable for tokio::process::Child {
 
 impl Drop for DroppyChild {
     fn drop(&mut self) {
-        if let Err(e) = self.signal(Signal::SIGTERM) {
+        let Some(mut inner) = self.0.take() else {
+            return;
+        };
+        if let Err(e) = inner.signal(Signal::SIGTERM) {
             eprintln!("Failed to signal dropped child: {e}");
             return;
         }
-        let Ok(status) = self.wait() else { return };
+        let Ok(status) = inner.wait() else { return };
         if status.success() {
             return;
         }
@@ -125,9 +127,35 @@ impl Drop for DroppyChild {
 #[static_init::dynamic(drop)]
 static mut DISPLAY_SERVER: Xvfb = Xvfb::spawn().unwrap();
 
+#[derive(Debug, derive_more::Deref, derive_more::DerefMut)]
+struct NuExecutable(TempPath);
+
+impl NuExecutable {
+    fn new(content: &str) -> anyhow::Result<Self> {
+        const NU_EXECUTABLE: &str = env!("NU_EXECUTABLE");
+
+        let mut temp_file = tempfile::Builder::new()
+            .permissions(Permissions::from_mode(0o755))
+            .suffix(".nu")
+            .tempfile()
+            .context("temporary build command file")?;
+
+        temp_file.as_file_mut().write_all(
+            formatdoc! {r#"
+                #! {NU_EXECUTABLE}
+                {content}
+            "#}
+            .as_bytes(),
+        )?;
+
+        Ok(Self(temp_file.into_temp_path()))
+    }
+}
+
 #[derive(Debug)]
 struct DBusSession {
     _process: DroppyChild,
+    // TODO which of these are actually needed
     _socket_dir: TempDir,
     _xdg_runtime_dir: TempDir,
     _home_dir: TempDir,
@@ -151,6 +179,7 @@ impl DBusSession {
                 "--nopidfile",
                 "--nofork",
                 "--config-file",
+                // TODO disable notifications service
                 env!("DBUS_SESSION_CONFIG_FILE"),
                 "--address",
                 &server_address,
@@ -159,12 +188,16 @@ impl DBusSession {
             .stderr(Stdio::piped())
             .spawn()?;
 
-        process.capture_stdouts_lines(|stdoutput, line| {
-            eprintln!("dbus-daemon {stdoutput}: {line}");
+        process.for_stderr_line(|line| {
+            eprintln!("dbus-daemon stderr: {line}");
+        })?;
+
+        process.for_stdout_line(|line| {
+            eprintln!("dbus-daemon stdout: {line}");
         })?;
 
         Ok(Self {
-            _process: DroppyChild(process),
+            _process: DroppyChild(Some(process)),
             _socket_dir: socket_dir,
             _xdg_runtime_dir: xdg_runtime_dir,
             server_address,
@@ -191,65 +224,13 @@ impl Subject {
         });
         Ok(browser)
     }
+
     fn url(&self, path: &'static str) -> String {
         format!(
             "http://{}:{}{path}",
             Ipv4Addr::LOCALHOST,
             self.state_for_testing.serve_port
         )
-    }
-
-    async fn spawn(build_command: impl AsRef<OsStr>) -> anyhow::Result<Self> {
-        let git_toplevel = TempDir::with_prefix(
-            // https://github.com/static-web-server/static-web-server/pull/606
-            "not-hidden",
-        )?;
-
-        let git_repo_initialized = std::process::Command::new("git")
-            .current_dir(&git_toplevel)
-            .args(["init", "--quiet"])
-            .status()
-            .context("failed to spawn `git init`")?
-            .success();
-
-        assert!(git_repo_initialized);
-
-        const SUBJECT: &str = env!("CARGO_BIN_EXE_conveyorbelt");
-
-        let mut process = tokio::process::Command::new(SUBJECT)
-            .kill_on_drop(true)
-            .current_dir(&git_toplevel)
-            .env(StateForTesting::ENV_VAR, "true")
-            .envs(DISPLAY_SERVER.read().envs())
-            .envs(DBUS_SESSION.read().envs())
-            .stdout(Stdio::piped())
-            .arg(build_command)
-            .spawn()
-            .context("failed to spawn subject")?;
-
-        let mut stdout = process
-            .stdout
-            .as_mut()
-            .context("failed to obtain subject stdout mutable reference")?;
-
-        let mut stdout_lines = BufReader::new(&mut stdout).lines();
-
-        let line = stdout_lines
-            .next_line()
-            .await
-            .context("failed to read subject's first stdout line")?
-            .context("subject stdout ended before reading first line")?;
-
-        let state_for_testing =
-            serde_json::from_str(&line).context("failed to parse state for testing")?;
-
-        //process.pipe_stdouts_prefixed("subject").await?;
-
-        Ok(Self {
-            process,
-            state_for_testing,
-            _git_toplevel: git_toplevel,
-        })
     }
 }
 
@@ -260,101 +241,263 @@ struct FreshBrowser {
     _data_dir: TempDir,
 }
 
-async fn fresh_browser() -> anyhow::Result<FreshBrowser> {
-    let data_dir = tempdir()?;
-    let (browser, handler) = Browser::launch(
-        BrowserConfig::builder()
-            .user_data_dir(data_dir.path())
-            .envs(DBUS_SESSION.read().envs_owned())
-            .build()
-            .map_err(|e| anyhow::anyhow!(e))?,
-    )
-    .await?;
+impl FreshBrowser {
+    async fn spawn() -> anyhow::Result<Self> {
+        let data_dir = tempdir()?;
+        let (browser, handler) = Browser::launch(
+            BrowserConfig::builder()
+                .chrome_executable(Path::new(env!("CHROMIUM_BIN_PATH")).join("chromium"))
+                .user_data_dir(data_dir.path())
+                .envs(DBUS_SESSION.read().envs_owned())
+                .build()
+                .map_err(|e| anyhow!(e))?,
+        )
+        .await?;
 
-    let handler_task = tokio::spawn(async move {
-        handler.for_each(async |_| {}).await;
-    });
+        let handler_task = tokio::spawn(async move {
+            handler.for_each(async |_| {}).await;
+        });
 
-    Ok(FreshBrowser {
-        _data_dir: data_dir,
-        instance: browser,
-        _handler_task: Some(handler_task),
-    })
-}
-
-#[derive(Clone, Copy, Debug)]
-struct TestPage {
-    path: &'static str,
-    title: &'static str,
-}
-
-fn escape_nu_string(s: &str) -> String {
-    assert!(!s.contains("'##"));
-    format!("r##'{s}'##")
-}
-
-async fn build_command_with(
-    pages: impl IntoIterator<Item = TestPage>,
-    post_pages: &str,
-) -> anyhow::Result<TempPath> {
-    let mut command = tempfile::Builder::new()
-        .permissions(Permissions::from_mode(0o755))
-        .suffix(".nu")
-        .tempfile()?;
-
-    let page_lines = pages
-        .into_iter()
-        .map(|page| {
-            let html = html! {
-                (DOCTYPE)
-                html {
-                    head {
-                        link rel="icon" href="data:," type="image/x-icon";
-                        meta charset="UTF-8";
-                        title { (page.title) }
-                    }
-                    body {}
-                }
-            }
-            .into_string();
-            let html = escape_nu_string(&html);
-
-            format!(r#"{html} | save $"($serve_path)/{}";"#, page.path)
+        Ok(Self {
+            _data_dir: data_dir,
+            instance: browser,
+            _handler_task: Some(handler_task),
         })
-        .collect::<Vec<String>>()
-        .join("\n");
+    }
+}
 
-    const NU_EXECUTABLE: &str = env!("NU_EXECUTABLE");
+struct Fixture {
+    root: TempDir,
+    // TODO which of these are actually needed?
+    xdg_config_home: TempDir,
+    xdg_cache_home: TempDir,
+    build_command: NuExecutable,
+    home: TempDir,
+    subject_path_env_var: BTreeSet<&'static str>,
+}
 
-    let script = formatdoc! {r#"
-        #! {NU_EXECUTABLE}
-        let serve_path: path = $env.SERVE_PATH
-        if ($serve_path | path exists) {{
-            rm --recursive $serve_path
-        }}
-        mkdir $serve_path
-        {page_lines}
-        {post_pages}
-    "#};
+impl Fixture {
+    fn new() -> anyhow::Result<Self> {
+        let root = TempDir::with_prefix(
+            // https://github.com/static-web-server/static-web-server/pull/606
+            "not-hidden-",
+        )?;
 
-    command.as_file_mut().write_all(script.as_bytes())?;
-    Ok(command.into_temp_path())
+        let xdg_config_home = tempfile::Builder::new()
+            .permissions(Permissions::from_mode(0o755))
+            .tempdir()?;
+
+        let xdg_cache_home = tempfile::Builder::new()
+            .permissions(Permissions::from_mode(0o755))
+            .tempdir()?;
+
+        let home = tempfile::Builder::new()
+            .permissions(Permissions::from_mode(0o755))
+            .tempdir()?;
+
+        let subject_path_env_var =
+            BTreeSet::from_iter([env!("GIT_BIN_PATH"), env!("CHROMIUM_BIN_PATH")].to_vec());
+
+        let build_command = NuExecutable::new(&formatdoc! {r#"
+            if ($env.SERVE_PATH | path exists) {{
+                rm --recursive $env.SERVE_PATH
+            }}
+            mkdir $env.SRC_PATH
+            cp --verbose --recursive --preserve [mode, link] $env.SRC_PATH $env.SERVE_PATH
+        "#})?;
+
+        let fixture = Self {
+            root,
+            xdg_config_home,
+            xdg_cache_home,
+            home,
+            subject_path_env_var,
+            build_command,
+        };
+
+        std::fs::create_dir(fixture.src_path()).context("creating fixture source dir")?;
+        Ok(fixture)
+    }
+
+    fn build_command(&mut self, build_command: NuExecutable) {
+        self.build_command = build_command;
+    }
+
+    async fn git_init(&self) -> anyhow::Result<()> {
+        let mut command = tokio::process::Command::new(Path::new(env!("GIT_BIN_PATH")).join("git"));
+        command.current_dir(&self.root).args(["init", "--quiet"]);
+
+        let exit_status = command
+            .status()
+            .await
+            .with_context(|| format!("failed to spawn: {command:?}"))?;
+
+        if !exit_status.success() {
+            bail!("exited with {exit_status}: {command:?}");
+        }
+
+        Ok(())
+    }
+
+    fn write_source_file(
+        &self,
+        path: impl AsRef<Path>,
+        content: impl ToBytes,
+    ) -> std::io::Result<()> {
+        let content = content.to_bytes();
+        std::fs::write(self.src_path().join(path), content)
+    }
+
+    async fn spawn_subject(&self) -> anyhow::Result<Subject> {
+        let mut subject_command = self.subject_command();
+
+        subject_command
+            .stdout(Stdio::piped())
+            .stderr(Stdio::piped());
+
+        let mut process = subject_command.spawn().context("failed to spawn subject")?;
+
+        let stdout = process
+            .stdout
+            .as_mut()
+            .context("obtaining subject stdout mutable reference")?;
+
+        let mut line = String::new();
+        let mut stdout_buf = tokio::io::BufReader::new(stdout);
+
+        stdout_buf
+            .read_line(&mut line)
+            .await
+            .context("reading subject stdout line")?;
+
+        let state_for_testing =
+            serde_json::from_str(&line).context("failed to parse state for testing")?;
+
+        Ok(Subject {
+            process,
+            state_for_testing,
+        })
+    }
+
+    fn subject_command(&self) -> tokio::process::Command {
+        let mut command = tokio::process::Command::new(env!("CARGO_BIN_EXE_conveyorbelt"));
+
+        command
+            .kill_on_drop(true)
+            .current_dir(&self.root)
+            .env(StateForTesting::ENV_VAR, "true")
+            .env(
+                "PATH",
+                std::env::join_paths(&self.subject_path_env_var).unwrap(),
+            )
+            .envs(self.envs())
+            .arg(self.build_command.as_os_str());
+
+        command
+    }
+
+    fn src_path(&self) -> PathBuf {
+        self.root.path().join("src")
+    }
+}
+
+impl EnvProvider for Fixture {
+    fn envs(&self) -> impl IntoIterator<Item = (impl AsRef<OsStr>, impl AsRef<OsStr>)> {
+        let mut envs = DISPLAY_SERVER
+            .read()
+            .envs_owned()
+            .into_iter()
+            .chain(DBUS_SESSION.read().envs_owned())
+            .collect::<Vec<_>>();
+
+        envs.push((
+            "SRC_PATH".to_string(),
+            self.src_path().to_str().unwrap().to_string(),
+        ));
+
+        // Browsers by default have needs
+        envs.push((
+            "XDG_CONFIG_HOME".to_string(),
+            self.xdg_config_home.path().to_str().unwrap().to_string(),
+        ));
+
+        // Browsers by default have needs
+        envs.push((
+            "XDG_CACHE_HOME".to_string(),
+            self.xdg_cache_home.path().to_str().unwrap().to_string(),
+        ));
+
+        // Browsers by default have needs
+        envs.push((
+            "HOME".to_string(),
+            self.home.path().to_str().unwrap().to_string(),
+        ));
+
+        envs
+    }
+}
+
+trait ToBytes {
+    fn to_bytes(self) -> Vec<u8>;
+}
+
+impl ToBytes for &HtmlPage {
+    fn to_bytes(self) -> Vec<u8> {
+        self.to_string().into_bytes()
+    }
+}
+
+impl ToBytes for HtmlPage {
+    fn to_bytes(self) -> Vec<u8> {
+        (&self).to_bytes()
+    }
+}
+
+#[derive(Debug, Clone)]
+struct HtmlPage {
+    title: Option<&'static str>,
+}
+
+impl HtmlPage {
+    fn new() -> Self {
+        Self { title: None }
+    }
+    fn title(self, title: &'static str) -> Self {
+        Self { title: Some(title) }
+    }
+}
+
+impl std::fmt::Display for HtmlPage {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        let html = html! {
+            (DOCTYPE)
+            html {
+                head {
+                    link rel="icon" href="data:," type="image/x-icon";
+                    meta charset="UTF-8";
+                    @if let Some(title) = &self.title {
+                        title { (title) }
+                    }
+                }
+                body {}
+            }
+        };
+
+        write!(f, "{}", html.into_string())
+    }
 }
 
 #[tokio::test]
 async fn page_content_is_served() {
-    let build_command = build_command_with(
-        [TestPage {
-            path: "foo.html",
-            title: "some page",
-        }],
-        "",
-    )
-    .await
-    .unwrap();
+    let fixture = Fixture::new().unwrap();
+    fixture.git_init().await.unwrap();
 
-    let subject = Subject::spawn(&build_command).await.unwrap();
-    let browser = fresh_browser().await.unwrap();
+    fixture
+        .write_source_file("foo.html", HtmlPage::new().title("some page"))
+        .unwrap();
+
+    let subject = fixture.spawn_subject().await.unwrap();
+    let browser = FreshBrowser::spawn().await.unwrap();
 
     let title = browser
         .instance
@@ -374,11 +517,10 @@ async fn page_content_is_served() {
 
 #[tokio::test]
 async fn default_404_page() {
-    let build_command = build_command_with([], "").await.unwrap();
-
-    let subject = Subject::spawn(&build_command).await.unwrap();
-    let browser = fresh_browser().await.unwrap();
-
+    let fixture = Fixture::new().unwrap();
+    fixture.git_init().await.unwrap();
+    let subject = fixture.spawn_subject().await.unwrap();
+    let browser = FreshBrowser::spawn().await.unwrap();
     let page = browser.instance.new_page("about:blank").await.unwrap();
 
     let mut responses = page
@@ -387,24 +529,24 @@ async fn default_404_page() {
         .unwrap();
 
     page.goto(subject.url("/nope.html")).await.unwrap();
-
     let response_status = responses.next().await.unwrap().response.status;
     assert_eq!(response_status, 404);
 }
 
 #[tokio::test]
 async fn browser_launch() {
-    let build_command = build_command_with([], "").await.unwrap();
-
-    let subject = Subject::spawn(&build_command).await.unwrap();
+    let fixture = Fixture::new().unwrap();
+    fixture.git_init().await.unwrap();
+    let subject = fixture.spawn_subject().await.unwrap();
     subject.connect_to_browser().await.unwrap();
 }
 
 #[tokio::test]
 async fn browser_orphaned() {
-    let build_command = build_command_with([], "").await.unwrap();
+    let fixture = Fixture::new().unwrap();
+    fixture.git_init().await.unwrap();
+    let mut subject = fixture.spawn_subject().await.unwrap();
 
-    let mut subject = Subject::spawn(&build_command).await.unwrap();
     subject.process.kill_wait(Signal::SIGTERM).await.unwrap();
 
     let sys = sysinfo::System::new_with_specifics(
@@ -412,6 +554,7 @@ async fn browser_orphaned() {
     );
 
     let browser_process_pid = sysinfo::Pid::from_u32(subject.state_for_testing.browser_pid);
+
     let Some(browser_process) = sys.process(browser_process_pid) else {
         panic!("browser process not found")
     };
@@ -422,38 +565,34 @@ async fn browser_orphaned() {
 
 #[tokio::test]
 async fn launched_browser_has_head() {
-    let build_command = build_command_with([], "").await.unwrap();
-    let subject = Subject::spawn(&build_command).await.unwrap();
+    let fixture = Fixture::new().unwrap();
+    fixture.git_init().await.unwrap();
+    let subject = fixture.spawn_subject().await.unwrap();
     let browser = subject.connect_to_browser().await.unwrap();
     let page = browser.new_page("about:blank").await.unwrap();
     let user_agent = page.evaluate("navigator.userAgent").await.unwrap();
+
     let Some(serde_json::Value::String(user_agent)) = user_agent.value() else {
         panic!();
     };
+
     assert!(!user_agent.contains("HeadlessChrome"), "{user_agent}");
 }
 
 #[tokio::test]
 async fn custom_404_page() {
-    let build_command = build_command_with(
-        [
-            TestPage {
-                path: "exists.html",
-                title: "I'm here!",
-            },
-            TestPage {
-                path: "404.html",
-                title: "Ain't found",
-            },
-        ],
-        "",
-    )
-    .await
-    .unwrap();
+    let fixture = Fixture::new().unwrap();
+    fixture.git_init().await.unwrap();
 
-    let subject = Subject::spawn(&build_command).await.unwrap();
-    let browser = fresh_browser().await.unwrap();
+    fixture
+        .write_source_file("exists.html", HtmlPage::new().title("I'm here!"))
+        .unwrap();
+    fixture
+        .write_source_file("404.html", HtmlPage::new().title("Ain't found"))
+        .unwrap();
 
+    let subject = fixture.spawn_subject().await.unwrap();
+    let browser = FreshBrowser::spawn().await.unwrap();
     let page = browser.instance.new_page("about:blank").await.unwrap();
 
     let mut responses = page
@@ -462,29 +601,23 @@ async fn custom_404_page() {
         .unwrap();
 
     page.goto(subject.url("/nope.html")).await.unwrap();
-
     let response_status = responses.next().await.unwrap().response.status;
     assert_eq!(response_status, 404);
-
     let title = page.get_title().await.unwrap().unwrap();
-
     assert_eq!(title, "Ain't found");
 }
 
 #[tokio::test]
 async fn dot_html_is_optional() {
-    let build_command = build_command_with(
-        [TestPage {
-            path: "foo.html",
-            title: "I can haz pretty path",
-        }],
-        "",
-    )
-    .await
-    .unwrap();
+    let fixture = Fixture::new().unwrap();
+    fixture.git_init().await.unwrap();
 
-    let subject = Subject::spawn(&build_command).await.unwrap();
-    let browser = fresh_browser().await.unwrap();
+    fixture
+        .write_source_file("foo.html", HtmlPage::new().title("I can haz pretty path"))
+        .unwrap();
+
+    let subject = fixture.spawn_subject().await.unwrap();
+    let browser = FreshBrowser::spawn().await.unwrap();
 
     let title = browser
         .instance
@@ -504,18 +637,15 @@ async fn dot_html_is_optional() {
 
 #[tokio::test]
 async fn index_html() {
-    let build_command = build_command_with(
-        [TestPage {
-            path: "index.html",
-            title: "I am root",
-        }],
-        "",
-    )
-    .await
-    .unwrap();
+    let fixture = Fixture::new().unwrap();
+    fixture.git_init().await.unwrap();
 
-    let subject = Subject::spawn(&build_command).await.unwrap();
-    let browser = fresh_browser().await.unwrap();
+    fixture
+        .write_source_file("index.html", HtmlPage::new().title("I am root"))
+        .unwrap();
+
+    let subject = fixture.spawn_subject().await.unwrap();
+    let browser = FreshBrowser::spawn().await.unwrap();
 
     let title = browser
         .instance
@@ -535,24 +665,19 @@ async fn index_html() {
 
 #[tokio::test]
 async fn mime_types() {
-    let build_command = build_command_with(
-        [
-            TestPage {
-                path: "file.html",
-                title: "I'm a page",
-            },
-            TestPage {
-                path: "file.txt",
-                title: "I am text",
-            },
-        ],
-        "",
-    )
-    .await
-    .unwrap();
+    let fixture = Fixture::new().unwrap();
+    fixture.git_init().await.unwrap();
 
-    let subject = Subject::spawn(&build_command).await.unwrap();
-    let browser = fresh_browser().await.unwrap();
+    fixture
+        .write_source_file("file.html", HtmlPage::new().title("I'm a page"))
+        .unwrap();
+
+    fixture
+        .write_source_file("file.txt", HtmlPage::new().title("I am text"))
+        .unwrap();
+
+    let subject = fixture.spawn_subject().await.unwrap();
+    let browser = FreshBrowser::spawn().await.unwrap();
 
     let page = browser.instance.new_page("about:blank").await.unwrap();
 
@@ -578,19 +703,15 @@ async fn mime_types() {
 
 #[tokio::test]
 async fn ignore_hidden_files() {
-    let build_command = build_command_with(
-        [TestPage {
-            path: ".file.html",
-            title: "can't find me",
-        }],
-        "",
-    )
-    .await
-    .unwrap();
+    let fixture = Fixture::new().unwrap();
+    fixture.git_init().await.unwrap();
 
-    let subject = Subject::spawn(&build_command).await.unwrap();
-    let browser = fresh_browser().await.unwrap();
+    fixture
+        .write_source_file(".file.html", HtmlPage::new().title("can't find me"))
+        .unwrap();
 
+    let subject = fixture.spawn_subject().await.unwrap();
+    let browser = FreshBrowser::spawn().await.unwrap();
     let page = browser.instance.new_page("about:blank").await.unwrap();
 
     let mut responses = page
@@ -605,19 +726,17 @@ async fn ignore_hidden_files() {
 
 #[tokio::test]
 async fn forbid_symlinks() {
-    let build_command = build_command_with(
-        [TestPage {
-            path: "real.html",
-            title: "real page",
-        }],
-        r#"ln -s $"($env.SERVE_PATH)/real.html" $"($env.SERVE_PATH)/symlink.html";"#,
-    )
-    .await
-    .unwrap();
+    let fixture = Fixture::new().unwrap();
+    fixture.git_init().await.unwrap();
 
-    let subject = Subject::spawn(&build_command).await.unwrap();
-    let browser = fresh_browser().await.unwrap();
+    fixture
+        .write_source_file("real.html", HtmlPage::new().title("real page"))
+        .unwrap();
 
+    symlink("real.html", fixture.src_path().join("symlink.html")).unwrap();
+
+    let subject = fixture.spawn_subject().await.unwrap();
+    let browser = FreshBrowser::spawn().await.unwrap();
     let page = browser.instance.new_page("about:blank").await.unwrap();
 
     let mut responses = page
@@ -632,66 +751,179 @@ async fn forbid_symlinks() {
 
 #[tokio::test]
 async fn sigterm() {
-    let build_command = build_command_with([], "").await.unwrap();
-    let mut subject = Subject::spawn(&build_command).await.unwrap();
+    let fixture = Fixture::new().unwrap();
+    fixture.git_init().await.unwrap();
+    let mut subject = fixture.spawn_subject().await.unwrap();
+
     let status = subject.process.kill_wait(Signal::SIGTERM).await.unwrap();
+
     assert!(status.success());
 }
 
 #[tokio::test]
 async fn sigint() {
-    let build_command = build_command_with([], "").await.unwrap();
-    let mut subject = Subject::spawn(&build_command).await.unwrap();
+    let fixture = Fixture::new().unwrap();
+    fixture.git_init().await.unwrap();
+    let mut subject = fixture.spawn_subject().await.unwrap();
+
     let status = subject.process.kill_wait(Signal::SIGINT).await.unwrap();
+
     assert!(status.success());
 }
 
 #[tokio::test]
 async fn sigquit() {
-    let build_command = build_command_with([], "").await.unwrap();
-    let mut subject = Subject::spawn(&build_command).await.unwrap();
+    let fixture = Fixture::new().unwrap();
+    fixture.git_init().await.unwrap();
+    let mut subject = fixture.spawn_subject().await.unwrap();
+
     let status = subject.process.kill_wait(Signal::SIGQUIT).await.unwrap();
+
     assert!(status.success());
 }
 
 #[tokio::test]
-#[ignore = "todo"]
 async fn cannot_find_git_executable() {
-    todo!()
+    let mut fixture = Fixture::new().unwrap();
+    fixture.git_init().await.unwrap();
+    fixture.subject_path_env_var.remove(env!("GIT_BIN_PATH"));
+    let output = fixture.subject_command().output().await.unwrap();
+    assert!(!output.status.success());
+    let stderr = String::from_utf8(output.stderr).unwrap();
+    assert!(stderr.contains("failed to run "), "{stderr}");
 }
 
 #[tokio::test]
-#[ignore = "todo"]
-async fn not_in_a_git_worktree() {
-    todo!()
+async fn cannot_find_browser_executable() {
+    let mut fixture = Fixture::new().unwrap();
+    fixture.git_init().await.unwrap();
+
+    fixture
+        .subject_path_env_var
+        .remove(env!("CHROMIUM_BIN_PATH"));
+
+    let output = fixture.subject_command().output().await.unwrap();
+    assert!(!output.status.success());
+    let stderr = String::from_utf8(output.stderr).unwrap();
+
+    assert!(
+        stderr.contains("Could not auto detect a chrome executable"),
+        "{stderr}"
+    );
 }
 
 #[tokio::test]
-#[ignore = "todo"]
+async fn not_inside_a_git_work_tree() {
+    let fixture = Fixture::new().unwrap();
+    let output = fixture.subject_command().output().await.unwrap();
+    assert!(!output.status.success());
+    let stderr = String::from_utf8(output.stderr).unwrap();
+    assert!(stderr.contains("not a git repository"), "{stderr}");
+}
+
+#[tokio::test]
 async fn build_command_not_found() {
-    todo!()
+    let fixture = Fixture::new().unwrap();
+    fixture.git_init().await.unwrap();
+    std::fs::remove_file(&*fixture.build_command).unwrap();
+    let output = fixture.subject_command().output().await.unwrap();
+    assert!(!output.status.success());
+    let stderr = String::from_utf8(output.stderr).unwrap();
+    assert!(stderr.contains("No such file or directory"), "{stderr}");
 }
 
 #[tokio::test]
-#[ignore = "todo"]
+async fn build_command_not_executable() {
+    let fixture = Fixture::new().unwrap();
+    fixture.git_init().await.unwrap();
+
+    tokio::fs::set_permissions(&*fixture.build_command, Permissions::from_mode(0o644))
+        .await
+        .unwrap();
+
+    let output = fixture.subject_command().output().await.unwrap();
+    assert!(!output.status.success());
+    let stderr = String::from_utf8(output.stderr).unwrap();
+    assert!(stderr.contains("Permission denied"), "{stderr}");
+}
+
+// TODO Xvfb various warnings
+
+#[tokio::test]
 async fn build_command_stderr() {
-    todo!()
+    let mut fixture = Fixture::new().unwrap();
+    fixture.git_init().await.unwrap();
+    fixture.build_command(NuExecutable::new("print -e 'some stderr line'").unwrap());
+    let mut subject = fixture.spawn_subject().await.unwrap();
+
+    let mut stderr_lines =
+        tokio::io::BufReader::new(subject.process.stderr.take().unwrap()).lines();
+
+    loop {
+        let line = stderr_lines.next_line().await.unwrap().unwrap();
+        if line.contains("build command stderr: some stderr line") {
+            break;
+        }
+    }
+
+    let status = subject.process.kill_wait(Signal::SIGTERM).await.unwrap();
+    assert!(status.success());
 }
 
 #[tokio::test]
-#[ignore = "todo"]
 async fn build_command_stdout() {
-    todo!()
+    let mut fixture = Fixture::new().unwrap();
+    fixture.git_init().await.unwrap();
+    fixture.build_command(NuExecutable::new("print 'some stdout line'").unwrap());
+    let mut subject = fixture.spawn_subject().await.unwrap();
+
+    let mut stderr_lines =
+        tokio::io::BufReader::new(subject.process.stderr.take().unwrap()).lines();
+
+    loop {
+        let line = stderr_lines.next_line().await.unwrap().unwrap();
+        if line.contains("build command stdout: some stdout line") {
+            break;
+        }
+    }
+
+    let status = subject.process.kill_wait(Signal::SIGTERM).await.unwrap();
+    assert!(status.success());
 }
 
 #[tokio::test]
-#[ignore = "todo"]
 async fn build_command_failure() {
-    todo!()
+    let mut fixture = Fixture::new().unwrap();
+    fixture.git_init().await.unwrap();
+    fixture.build_command(NuExecutable::new("exit 1").unwrap());
+
+    let mut subject = fixture
+        .subject_command()
+        .stderr(Stdio::piped())
+        .spawn()
+        .unwrap();
+
+    let mut stderr_lines = tokio::io::BufReader::new(subject.stderr.take().unwrap()).lines();
+
+    loop {
+        let line = stderr_lines.next_line().await.unwrap().unwrap();
+        if line.contains("build command ") && line.contains("exited with exit status: 1") {
+            break;
+        }
+    }
+
+    let status = subject.wait().await.unwrap();
+    assert!(!status.success());
 }
 
 #[tokio::test]
 #[ignore = "todo"]
 async fn browser_viewport() {
+    todo!()
+}
+
+#[tokio::test]
+#[ignore = "todo"]
+async fn serve_path_git_tracked() {
     todo!()
 }
