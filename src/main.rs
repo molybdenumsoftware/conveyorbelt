@@ -68,6 +68,36 @@ async fn main() {
     let mut serve_path: PathBuf = git_toplevel.into();
     serve_path.push(env!("SERVE_DIR"));
     debug!("serve path resolved: {serve_path:?}");
+
+    let mut command = Command::new("git");
+    command.stdout(Stdio::null());
+    command.arg("check-ignore");
+    command.arg(serve_path.as_os_str());
+
+    let mut process = command
+        .spawn()
+        .with_context(|| format!("failed to run {command:?}"))
+        .unwrap();
+
+    process
+        .for_stderr_line(|line| {
+            info!("`git check-ignore` stderr: {line}");
+        })
+        .unwrap();
+
+    if !process
+        .wait()
+        .await
+        .with_context(|| format!("waiting for `{command:?}` to complete"))
+        .unwrap()
+        .success()
+    {
+        panic!(
+            "serve path (`{}`) is not git ignored",
+            serve_path.to_str().unwrap()
+        );
+    }
+
     let mut build_command = Command::new(build_command);
 
     build_command

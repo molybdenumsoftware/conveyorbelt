@@ -11,7 +11,11 @@ use std::{
 
 use anyhow::{Context, anyhow, bail};
 use chromiumoxide::{
-    Browser, BrowserConfig, cdp::browser_protocol::network::EventResponseReceived,
+    Browser, BrowserConfig,
+    cdp::browser_protocol::{
+        browser::{GetWindowBoundsParams, GetWindowForTargetParams},
+        network::EventResponseReceived,
+    },
 };
 use conveyorbelt::{ForStdoutputLine as _, StateForTesting};
 use futures::StreamExt as _;
@@ -48,9 +52,17 @@ struct Xvfb(#[allow(dead_code)] DroppyChild);
 
 impl Xvfb {
     const DISPLAY: &str = ":99";
+    const WIDTH: u16 = 1920;
+    const HEIGHT: u16 = 1080;
+
     fn spawn() -> anyhow::Result<Self> {
         let mut process = std::process::Command::new(env!("XVFB_EXECUTABLE"))
-            .arg(Self::DISPLAY)
+            .args([
+                Self::DISPLAY,
+                "-screen",
+                "0",
+                &format!("{}x{}x24", Self::WIDTH, Self::HEIGHT),
+            ])
             .stdout(Stdio::piped())
             .stderr(Stdio::piped())
             .spawn()
@@ -306,6 +318,12 @@ impl Fixture {
             cp --verbose --recursive --preserve [mode, link] $env.SRC_PATH $env.SERVE_PATH
         "#})?;
 
+        std::fs::write(
+            root.path().join(".gitignore"),
+            format!("/{}", env!("SERVE_DIR")),
+        )
+        .unwrap();
+
         let fixture = Self {
             root,
             xdg_config_home,
@@ -370,8 +388,8 @@ impl Fixture {
             .await
             .context("reading subject stdout line")?;
 
-        let state_for_testing =
-            serde_json::from_str(&line).context("failed to parse state for testing")?;
+        let state_for_testing = serde_json::from_str(&line)
+            .with_context(|| format!("failed to parse state for testing: {line:?}"))?;
 
         Ok(Subject {
             process,
@@ -576,6 +594,8 @@ async fn launched_browser_has_head() {
         panic!();
     };
 
+    // TODO
+    // assert silimar to browser viewport dimensions test
     assert!(!user_agent.contains("HeadlessChrome"), "{user_agent}");
 }
 
@@ -587,6 +607,7 @@ async fn custom_404_page() {
     fixture
         .write_source_file("exists.html", HtmlPage::new().title("I'm here!"))
         .unwrap();
+
     fixture
         .write_source_file("404.html", HtmlPage::new().title("Ain't found"))
         .unwrap();
@@ -608,7 +629,7 @@ async fn custom_404_page() {
 }
 
 #[tokio::test]
-async fn dot_html_is_optional() {
+async fn html_extension_can_be_omitted() {
     let fixture = Fixture::new().unwrap();
     fixture.git_init().await.unwrap();
 
@@ -754,9 +775,7 @@ async fn sigterm() {
     let fixture = Fixture::new().unwrap();
     fixture.git_init().await.unwrap();
     let mut subject = fixture.spawn_subject().await.unwrap();
-
     let status = subject.process.kill_wait(Signal::SIGTERM).await.unwrap();
-
     assert!(status.success());
 }
 
@@ -765,9 +784,7 @@ async fn sigint() {
     let fixture = Fixture::new().unwrap();
     fixture.git_init().await.unwrap();
     let mut subject = fixture.spawn_subject().await.unwrap();
-
     let status = subject.process.kill_wait(Signal::SIGINT).await.unwrap();
-
     assert!(status.success());
 }
 
@@ -776,9 +793,7 @@ async fn sigquit() {
     let fixture = Fixture::new().unwrap();
     fixture.git_init().await.unwrap();
     let mut subject = fixture.spawn_subject().await.unwrap();
-
     let status = subject.process.kill_wait(Signal::SIGQUIT).await.unwrap();
-
     assert!(status.success());
 }
 
@@ -917,13 +932,68 @@ async fn build_command_failure() {
 }
 
 #[tokio::test]
-#[ignore = "todo"]
-async fn browser_viewport() {
-    todo!()
+async fn browser_window_not_at_default_chromiumoxide_dimensions() {
+    let fixture = Fixture::new().unwrap();
+    fixture.git_init().await.unwrap();
+    let subject = fixture.spawn_subject().await.unwrap();
+    let browser = subject.connect_to_browser().await.unwrap();
+
+    let page = browser.new_page("about:blank").await.unwrap();
+
+    let window_id = browser
+        .execute(
+            GetWindowForTargetParams::builder()
+                .target_id(page.target_id().clone())
+                .build(),
+        )
+        .await
+        .unwrap()
+        .result
+        .window_id;
+
+    let window_bounds = browser
+        .execute(GetWindowBoundsParams::new(window_id))
+        .await
+        .unwrap()
+        .result
+        .bounds;
+
+    assert!(window_bounds.width.unwrap() > 800);
+    assert!(window_bounds.height.unwrap() > 600);
 }
 
 #[tokio::test]
-#[ignore = "todo"]
-async fn serve_path_git_tracked() {
-    todo!()
+async fn serve_path_not_git_ignored() {
+    let fixture = Fixture::new().unwrap();
+    fixture.git_init().await.unwrap();
+
+    tokio::fs::remove_file(fixture.root.path().join(".gitignore"))
+        .await
+        .unwrap();
+
+    let mut subject = fixture
+        .subject_command()
+        .stderr(Stdio::piped())
+        .spawn()
+        .unwrap();
+
+    let mut stderr_lines = tokio::io::BufReader::new(subject.stderr.take().unwrap()).lines();
+
+    let serve_path = fixture.root.path().join(env!("SERVE_DIR"));
+
+    loop {
+        let line = stderr_lines.next_line().await.unwrap().unwrap();
+
+        let expected_line = format!(
+            "serve path (`{}`) is not git ignored",
+            serve_path.to_str().unwrap()
+        );
+
+        if line.contains(&expected_line) {
+            break;
+        }
+    }
+
+    let status = subject.wait().await.unwrap();
+    assert!(!status.success());
 }
