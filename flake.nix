@@ -11,6 +11,11 @@
   };
 
   inputs = {
+    advisory-db = {
+      flake = false;
+      url = "github:rustsec/advisory-db";
+    };
+    crane.url = "github:ipetkov/crane";
     files.url = "github:mightyiam/files";
     flake-compat = {
       flake = false;
@@ -22,6 +27,10 @@
       url = "github:hercules-ci/flake-parts";
     };
     import-tree.url = "github:vic/import-tree";
+    license = {
+      flake = false;
+      url = "https://spdx.org/licenses/MIT.txt";
+    };
     make-shell = {
       inputs.flake-compat.follows = "";
       url = "github:nicknovitski/make-shell";

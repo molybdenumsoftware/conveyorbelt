@@ -1,49 +1,75 @@
 {
-  lib,
-  rootPath,
   config,
+  lib,
+  toSource,
   ...
 }:
 {
+  cargoManifest.package.version = "0.0.0";
+
   perSystem =
-    psArgs@{ pkgs, ... }:
+    psArgs@{
+      pkgs,
+      craneLib,
+      ...
+    }:
     {
-      options.drv = lib.mkOption { type = lib.types.lazyAttrsOf lib.types.anything; };
-      config = {
-        drv.env = {
-          SERVE_DIR = "serve";
-          NU_EXECUTABLE = lib.getExe pkgs.nushell;
-          XVFB_EXECUTABLE = lib.getExe' pkgs.xorg.xvfb "Xvfb";
-          DBUS_DAEMON_EXECUTABLE = lib.getExe' pkgs.dbus "dbus-daemon";
-          DBUS_SESSION_CONFIG_FILE = "${pkgs.dbus}/share/dbus-1/session.conf";
-          GIT_BIN_PATH = "${pkgs.git}/bin";
-          CHROMIUM_BIN_PATH = "${pkgs.chromium}/bin";
+      checkEnv = {
+        NU_EXECUTABLE = lib.getExe pkgs.nushell;
+        XVFB_EXECUTABLE = lib.getExe' pkgs.xorg.xvfb "Xvfb";
+        DBUS_DAEMON_EXECUTABLE = lib.getExe' pkgs.dbus "dbus-daemon";
+        DBUS_SESSION_CONFIG_FILE = "${pkgs.dbus}/share/dbus-1/session.conf";
+        GIT_BIN_PATH = "${pkgs.git}/bin";
+        CHROMIUM_BIN_PATH = "${pkgs.chromium}/bin";
+      };
+
+      packages.default = craneLib.buildPackage {
+        inherit (psArgs.config.checks) cargoArtifacts;
+        env = psArgs.config.buildEnv // psArgs.config.checkEnv;
+
+        src =
+          [
+            config.filesets.manifest
+            config.filesets.lockFile
+            config.filesets.sourceFiles
+          ]
+          |> lib.fileset.unions
+          |> toSource;
+      };
+
+      make-shells.default = {
+        inputsFrom = [ psArgs.config.packages.default ];
+        env = psArgs.config.buildEnv // psArgs.config.checkEnv;
+      };
+
+      checks = {
+        cargoArtifacts = craneLib.buildDepsOnly {
+          env = psArgs.config.buildEnv;
+          src =
+            [
+              config.filesets.manifest
+              config.filesets.lockFile
+            ]
+            |> lib.fileset.unions
+            |> toSource;
         };
 
-        packages.default =
-          psArgs.config.drv
-          |> lib.recursiveUpdate {
-            name = config.metadata.title;
-            src = lib.fileset.toSource {
-              root = rootPath;
-              fileset = lib.fileset.unions [
-                (rootPath + "/Cargo.lock")
-                (rootPath + "/Cargo.toml")
-                (rootPath + "/common.rs")
-                (rootPath + "/src")
-                (rootPath + "/tests")
-              ];
-            };
-            cargoLock.lockFile = rootPath + "/Cargo.lock";
-          }
-          |> pkgs.rustPlatform.buildRustPackage;
+        package = psArgs.config.packages.default;
 
-        make-shells.default = {
-          inputsFrom = [ psArgs.config.packages.default ];
-          inherit (psArgs.config.drv) env;
+        clippy = craneLib.cargoClippy {
+          inherit (psArgs.config.checks) cargoArtifacts;
+          cargoClippyExtraArgs = "--all-targets -- --deny warnings";
+          env = psArgs.config.buildEnv // psArgs.config.checkEnv;
+
+          src =
+            [
+              config.filesets.manifest
+              config.filesets.lockFile
+              config.filesets.sourceFiles
+            ]
+            |> lib.fileset.unions
+            |> toSource;
         };
-
-        checks.package = psArgs.config.packages.default;
       };
     };
 }

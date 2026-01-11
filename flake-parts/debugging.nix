@@ -1,13 +1,13 @@
 {
   config.perSystem = psArgs: {
-    drv = {
-      env = {
-        LOG_FILTER_VAR_NAME = "LOG";
-        LOG = "trace";
-      };
-      buildType = "debug";
+    buildEnv = {
+      CARGO_PROFILE = "dev";
+      LOG_FILTER_VAR_NAME = "LOG";
+      LOG = "trace";
+    };
+
+    buildArgs = {
       dontStrip = true;
-      checkFlags = [ "--nocapture" ];
     };
   };
 }

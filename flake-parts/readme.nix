@@ -25,7 +25,7 @@
               $ ${config.metadata.title} <build command>
               ```
 
-              A *serve path* will be resolved to `<git top-level>/${psArgs.config.drv.env.SERVE_DIR}`
+              A *serve path* will be resolved to `<git top-level>/${psArgs.config.buildEnv.SERVE_DIR}`
               and its contents statically served at `http://localhost:<available port>/`.
               `chromium` will be launched with that URL.
 

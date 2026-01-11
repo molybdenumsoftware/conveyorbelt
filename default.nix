@@ -6,7 +6,7 @@ let
       inherit (flake-compat-node.locked) url;
       sha256 = flake-compat-node.locked.narHash;
     }
-    |> builtins.fetchTarball
+    |> fetchTarball
     |> import;
 in
 {

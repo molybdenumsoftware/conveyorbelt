@@ -1,7 +1,11 @@
-[package]
-edition = "2024"
+[[bin]]
 name = "conveyorbelt"
-version = "0.0.0"
+path = "src/main.rs"
+
+[dependencies.anyhow]
+default-features = false
+features = ["backtrace", "std"]
+version = "*"
 
 [dependencies.chromiumoxide]
 default-features = false
@@ -11,15 +15,6 @@ version = "*"
 [dependencies.clap]
 default-features = false
 features = ["derive"]
-version = "*"
-
-[dev-dependencies.derive_more]
-default-features = false
-features = ["deref", "deref_mut", "display"]
-version = "*"
-
-[dev-dependencies.futures]
-default-features = false
 version = "*"
 
 [dependencies.hyper]
@@ -57,6 +52,15 @@ default-features = false
 features = ["env-filter"]
 version = "*"
 
+[dev-dependencies.derive_more]
+default-features = false
+features = ["deref", "deref_mut"]
+version = "*"
+
+[dev-dependencies.futures]
+default-features = false
+version = "*"
+
 [dev-dependencies.indoc]
 default-features = false
 version = "*"
@@ -79,7 +83,9 @@ default-features = false
 features = ["system"]
 version = "*"
 
-[dependencies.anyhow]
-default-features = false
-features = ["backtrace", "std"]
-version = "*"
+[package]
+description = "CLI for web development that watches source, invokes rebuild, statically serves and triggers page reload"
+edition = "2024"
+license = "MIT"
+name = "conveyorbelt"
+version = "0.0.0"

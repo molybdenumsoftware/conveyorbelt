@@ -10,5 +10,12 @@
       default = "CLI for web development that watches source, invokes rebuild, statically serves and triggers page reload";
     };
   };
-  config.flake-file.description = config.metadata.description;
+  config = {
+    flake-file.description = config.metadata.description;
+
+    cargoManifest.package = {
+      description = config.metadata.description;
+      name = config.metadata.title;
+    };
+  };
 }
