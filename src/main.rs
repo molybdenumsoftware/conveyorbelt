@@ -1,3 +1,6 @@
+#[path = "../common.rs"]
+mod common;
+
 use std::{
     mem,
     net::{IpAddr, Ipv4Addr, SocketAddr, TcpListener},
@@ -9,8 +12,7 @@ use std::{
 use anyhow::{Context, anyhow};
 use chromiumoxide::{Browser, BrowserConfig};
 use clap::Parser as _;
-use conveyorbelt::{ForStdoutputLine, StateForTesting};
-use http::StatusCode;
+use hyper::StatusCode;
 use static_web_server::{
     handler::{RequestHandler, RequestHandlerOpts},
     service::RouterService,
@@ -18,7 +20,9 @@ use static_web_server::{
 };
 use tempfile::tempdir;
 use tokio::process::Command;
-use tracing::{debug, info};
+use tracing::{debug, info, warn};
+
+use crate::common::{ForStdoutputLine as _, StateForTesting};
 
 #[derive(Debug, Clone, clap::Parser)]
 struct Cli {
@@ -70,9 +74,12 @@ async fn main() {
     debug!("serve path resolved: {serve_path:?}");
 
     let mut command = Command::new("git");
-    command.stdout(Stdio::null());
-    command.arg("check-ignore");
-    command.arg(serve_path.as_os_str());
+
+    command
+        .stdout(Stdio::null())
+        .stderr(Stdio::piped())
+        .arg("check-ignore")
+        .arg(&serve_path);
 
     let mut process = command
         .spawn()
@@ -81,17 +88,17 @@ async fn main() {
 
     process
         .for_stderr_line(|line| {
-            info!("`git check-ignore` stderr: {line}");
+            warn!("`git check-ignore` stderr: {line}");
         })
         .unwrap();
 
-    if !process
+    let exit_status = process
         .wait()
         .await
         .with_context(|| format!("waiting for `{command:?}` to complete"))
-        .unwrap()
-        .success()
-    {
+        .unwrap();
+
+    if !exit_status.success() {
         panic!(
             "serve path (`{}`) is not git ignored",
             serve_path.to_str().unwrap()
@@ -207,11 +214,6 @@ async fn main() {
     debug!("browser data dir: {browser_data_dir:?}");
 
     let browser_config = BrowserConfig::builder()
-        .with_head()
-        // TODO test?
-        .respect_https_errors()
-        // TODO test?
-        .surface_invalid_messages()
         .with_head()
         .viewport(None)
         .user_data_dir(browser_data_dir.path())

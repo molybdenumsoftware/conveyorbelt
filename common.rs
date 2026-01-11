@@ -1,7 +1,5 @@
-// TODO can this file be loaded as two distinct modules, one in the program and another in the tests?
 use std::io::BufRead as _;
 
-use anyhow::Context as _;
 use serde::{Deserialize, Serialize};
 use tokio::io::AsyncBufReadExt as _;
 
@@ -17,13 +15,13 @@ impl StateForTesting {
 }
 
 pub trait ForStdoutputLine {
-    fn for_stderr_line(&mut self, f: fn(line: &str)) -> anyhow::Result<()>;
-    fn for_stdout_line(&mut self, f: fn(line: &str)) -> anyhow::Result<()>;
+    fn for_stderr_line(&mut self, f: fn(line: &str)) -> Option<()>;
+    fn for_stdout_line(&mut self, f: fn(line: &str)) -> Option<()>;
 }
 
 impl ForStdoutputLine for std::process::Child {
-    fn for_stderr_line(&mut self, f: fn(line: &str)) -> anyhow::Result<()> {
-        let child_stderr = self.stderr.take().context("Child stderr missing")?;
+    fn for_stderr_line(&mut self, f: fn(line: &str)) -> Option<()> {
+        let child_stderr = self.stderr.take()?;
         let mut child_stderr_lines = std::io::BufReader::new(child_stderr).lines();
         std::thread::spawn(move || {
             loop {
@@ -32,11 +30,11 @@ impl ForStdoutputLine for std::process::Child {
                 }
             }
         });
-        Ok(())
+        Some(())
     }
 
-    fn for_stdout_line(&mut self, f: fn(line: &str)) -> anyhow::Result<()> {
-        let child_stdout = self.stdout.take().context("Child stdout missing")?;
+    fn for_stdout_line(&mut self, f: fn(line: &str)) -> Option<()> {
+        let child_stdout = self.stdout.take()?;
         let mut child_stdout_lines = std::io::BufReader::new(child_stdout).lines();
         std::thread::spawn(move || {
             loop {
@@ -45,13 +43,13 @@ impl ForStdoutputLine for std::process::Child {
                 }
             }
         });
-        Ok(())
+        Some(())
     }
 }
 
 impl ForStdoutputLine for tokio::process::Child {
-    fn for_stderr_line(&mut self, f: fn(&str)) -> anyhow::Result<()> {
-        let child_stderr = self.stderr.take().context("Child stderr missing")?;
+    fn for_stderr_line(&mut self, f: fn(&str)) -> Option<()> {
+        let child_stderr = self.stderr.take()?;
         let mut stderr_lines = tokio::io::BufReader::new(child_stderr).lines();
 
         tokio::spawn(async move {
@@ -62,11 +60,11 @@ impl ForStdoutputLine for tokio::process::Child {
             }
         });
 
-        Ok(())
+        Some(())
     }
 
-    fn for_stdout_line(&mut self, f: fn(&str)) -> anyhow::Result<()> {
-        let child_stdout = self.stdout.take().context("Child stdout missing")?;
+    fn for_stdout_line(&mut self, f: fn(&str)) -> Option<()> {
+        let child_stdout = self.stdout.take()?;
         let mut stdout_lines = tokio::io::BufReader::new(child_stdout).lines();
 
         tokio::spawn(async move {
@@ -77,6 +75,6 @@ impl ForStdoutputLine for tokio::process::Child {
             }
         });
 
-        Ok(())
+        Some(())
     }
 }

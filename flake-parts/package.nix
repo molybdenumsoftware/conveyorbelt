@@ -29,6 +29,7 @@
               fileset = lib.fileset.unions [
                 (rootPath + "/Cargo.lock")
                 (rootPath + "/Cargo.toml")
+                (rootPath + "/common.rs")
                 (rootPath + "/src")
                 (rootPath + "/tests")
               ];

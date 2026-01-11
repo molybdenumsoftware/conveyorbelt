@@ -3,25 +3,83 @@ edition = "2024"
 name = "conveyorbelt"
 version = "0.0.0"
 
-[dependencies]
-anyhow = "*"
-chromiumoxide = "*"
-clap = { features = ["derive"], version = "*" }
-derive_more = { features = ["deref", "deref_mut", "display"], version = "*" }
-futures = "*"
-http = "0.2"
-hyper = { features = ["server"], version = "0" }
-serde = "*"
-serde_json = "*"
-static-web-server = { default-features = false, version = "*" }
-tempfile = "*"
-tokio = { features = ["io-std", "io-util", "process"], version = "*" }
-tracing = "*"
-tracing-subscriber = { features = ["env-filter"], version = "*" }
+[dependencies.chromiumoxide]
+default-features = false
+features = ["tokio-runtime"]
+version = "*"
 
-[dev-dependencies]
-indoc = "*"
-maud = "*"
-nix = { features = ["signal"], version = "*" }
-static_init = "*"
-sysinfo = { default-features = false, features = ["system"], version = "*" }
+[dependencies.clap]
+default-features = false
+features = ["derive"]
+version = "*"
+
+[dev-dependencies.derive_more]
+default-features = false
+features = ["deref", "deref_mut", "display"]
+version = "*"
+
+[dev-dependencies.futures]
+default-features = false
+version = "*"
+
+[dependencies.hyper]
+default-features = false
+features = ["http1", "server"]
+version = "0"
+
+[dependencies.serde]
+default-features = false
+version = "*"
+
+[dependencies.serde_json]
+default-features = false
+version = "*"
+
+[dependencies.static-web-server]
+default-features = false
+version = "*"
+
+[dependencies.tempfile]
+default-features = false
+version = "*"
+
+[dependencies.tokio]
+default-features = false
+features = ["io-util", "process"]
+version = "*"
+
+[dependencies.tracing]
+default-features = false
+version = "*"
+
+[dependencies.tracing-subscriber]
+default-features = false
+features = ["env-filter"]
+version = "*"
+
+[dev-dependencies.indoc]
+default-features = false
+version = "*"
+
+[dev-dependencies.maud]
+default-features = false
+version = "*"
+
+[dev-dependencies.nix]
+default-features = false
+features = ["signal"]
+version = "*"
+
+[dev-dependencies.static_init]
+default-features = false
+version = "*"
+
+[dev-dependencies.sysinfo]
+default-features = false
+features = ["system"]
+version = "*"
+
+[dependencies.anyhow]
+default-features = false
+features = ["backtrace", "std"]
+version = "*"
