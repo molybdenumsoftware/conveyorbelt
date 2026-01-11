@@ -280,6 +280,10 @@ impl FreshBrowser {
         let data_dir = tempdir()?;
         let (browser, handler) = Browser::launch(
             BrowserConfig::builder()
+                // TODO dedupe with test browser config
+                .no_sandbox()
+                // TODO dedupe with test browser config
+                .arg("--disable-crash-reporter")
                 .chrome_executable(Path::new(env!("CHROMIUM_BIN_PATH")).join("chromium"))
                 .user_data_dir(data_dir.path())
                 .envs(DBUS_SESSION.read().envs_owned())

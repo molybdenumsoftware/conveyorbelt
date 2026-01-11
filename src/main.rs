@@ -215,6 +215,10 @@ async fn main() {
 
     let browser_config = BrowserConfig::builder()
         .with_head()
+        // TODO dedupe with test browser config
+        .no_sandbox()
+        // TODO dedupe with test browser config
+        .arg("--disable-crash-reporter")
         .viewport(None)
         .user_data_dir(browser_data_dir.path())
         .port(0)
