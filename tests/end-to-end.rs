@@ -238,11 +238,8 @@ impl Subject {
 struct FreshBrowser {
     instance: Browser,
     _handler_task: Option<JoinHandle<()>>,
-    // TODO make sure this is successfully cleaned up.
-    // need to await on (async) browser close prior to dropping
-    // so perhaps instead of this being a struct,
-    // it'll be a function with_fresh_browser that takes a closure
-    // and performs the async termination
+    // If Browser still has open files then cleanup might fail.
+    // Waiting on AsyncDrop
     _data_dir: TempDir,
 }
 
