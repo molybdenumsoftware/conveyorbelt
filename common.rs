@@ -23,6 +23,7 @@ impl ForStdoutputLine for std::process::Child {
     fn for_stderr_line(&mut self, f: fn(line: &str)) -> Option<()> {
         let child_stderr = self.stderr.take()?;
         let mut child_stderr_lines = std::io::BufReader::new(child_stderr).lines();
+
         std::thread::spawn(move || {
             loop {
                 if let Some(Ok(line)) = child_stderr_lines.next() {
@@ -30,12 +31,14 @@ impl ForStdoutputLine for std::process::Child {
                 }
             }
         });
+
         Some(())
     }
 
     fn for_stdout_line(&mut self, f: fn(line: &str)) -> Option<()> {
         let child_stdout = self.stdout.take()?;
         let mut child_stdout_lines = std::io::BufReader::new(child_stdout).lines();
+
         std::thread::spawn(move || {
             loop {
                 if let Some(Ok(line)) = child_stdout_lines.next() {
@@ -43,6 +46,7 @@ impl ForStdoutputLine for std::process::Child {
                 }
             }
         });
+
         Some(())
     }
 }
