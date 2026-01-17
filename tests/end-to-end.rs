@@ -185,7 +185,6 @@ impl DBusSession {
                 "--nopidfile",
                 "--nofork",
                 "--config-file",
-                // TODO disable notifications service
                 env!("DBUS_SESSION_CONFIG_FILE"),
             ])
             .stdout(Stdio::piped())
@@ -789,8 +788,6 @@ async fn build_command_not_executable() {
     let stderr = String::from_utf8(output.stderr).unwrap();
     assert!(stderr.contains("Permission denied"), "{stderr}");
 }
-
-// TODO Xvfb various warnings
 
 #[tokio::test]
 async fn build_command_stderr() {
