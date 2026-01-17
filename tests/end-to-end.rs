@@ -3,13 +3,13 @@ mod common;
 
 use std::{
     collections::BTreeSet,
-    ffi::OsStr,
     fs::Permissions,
     io::Write,
     net::Ipv4Addr,
     os::unix::fs::{PermissionsExt, symlink},
     path::{Path, PathBuf},
     process::{ExitStatus, Stdio},
+    vec::Vec,
 };
 
 use anyhow::{Context, anyhow, bail};
@@ -25,8 +25,11 @@ use indoc::formatdoc;
 use maud::{DOCTYPE, html};
 use nix::{sys::signal::Signal, unistd::Pid};
 use sysinfo::{ProcessRefreshKind, RefreshKind};
-use tempfile::{TempDir, TempPath, tempdir};
-use tokio::{io::AsyncBufReadExt as _, task::JoinHandle};
+use tempfile::{TempDir, TempPath};
+use tokio::{
+    io::{AsyncBufReadExt as _, BufReader},
+    task::JoinHandle,
+};
 
 use crate::common::{ForStdoutputLine as _, StateForTesting};
 
@@ -41,18 +44,6 @@ struct Subject {
 #[derive(Debug, derive_more::Deref, derive_more::DerefMut)]
 struct DroppyChild(Option<std::process::Child>);
 
-trait EnvProvider {
-    fn envs(&self) -> impl IntoIterator<Item = (impl AsRef<OsStr>, impl AsRef<OsStr>)>;
-    fn envs_owned(&self) -> impl IntoIterator<Item = (String, String)> {
-        self.envs().into_iter().map(|(n, v)| {
-            (
-                n.as_ref().to_str().unwrap().to_string(),
-                v.as_ref().to_str().unwrap().to_string(),
-            )
-        })
-    }
-}
-
 #[derive(Debug)]
 struct Xvfb(#[allow(dead_code)] DroppyChild);
 
@@ -63,6 +54,7 @@ impl Xvfb {
 
     fn spawn() -> anyhow::Result<Self> {
         let mut process = std::process::Command::new(env!("XVFB_EXECUTABLE"))
+            .env_clear()
             .args([
                 Self::DISPLAY,
                 "-screen",
@@ -87,13 +79,6 @@ impl Xvfb {
             .unwrap();
 
         Ok(Self(DroppyChild(Some(process))))
-    }
-}
-
-impl EnvProvider for Xvfb {
-    fn envs(&self) -> impl IntoIterator<Item = (impl AsRef<OsStr>, impl AsRef<OsStr>)> {
-        let envs: [(&str, &OsStr); _] = [("DISPLAY", Self::DISPLAY.as_ref())];
-        envs
     }
 }
 
@@ -147,7 +132,22 @@ impl Drop for DroppyChild {
 }
 
 #[static_init::dynamic(drop)]
-static mut DISPLAY_SERVER: Xvfb = Xvfb::spawn().unwrap();
+static mut SHARED_ENVIRONMENT: SharedEnvironment = SharedEnvironment::init().unwrap();
+
+#[derive(Debug)]
+struct SharedEnvironment {
+    _xvfb: Xvfb,
+    _dbus: DBusSession,
+}
+
+impl SharedEnvironment {
+    fn init() -> anyhow::Result<Self> {
+        Ok(Self {
+            _xvfb: Xvfb::spawn()?,
+            _dbus: DBusSession::spawn()?,
+        })
+    }
+}
 
 #[derive(Debug, derive_more::Deref, derive_more::DerefMut)]
 struct NuExecutable(TempPath);
@@ -175,36 +175,18 @@ impl NuExecutable {
 }
 
 #[derive(Debug)]
-struct DBusSession {
-    _process: DroppyChild,
-    // TODO which of these are actually needed
-    _socket_dir: TempDir,
-    _xdg_runtime_dir: TempDir,
-    _home_dir: TempDir,
-    server_address: String,
-}
+struct DBusSession(#[allow(dead_code)] DroppyChild);
 
 impl DBusSession {
     fn spawn() -> anyhow::Result<DBusSession> {
-        let socket_dir = tempdir()?;
-        let home_dir = tempdir()?;
-        let xdg_runtime_dir = tempdir()?;
-
-        let server_address = format!("unix:path={}/session", socket_dir.path().to_str().unwrap());
-
         let mut process = std::process::Command::new(env!("DBUS_DAEMON_EXECUTABLE"))
-            .envs([
-                ("HOME", home_dir.path()),
-                ("XDG_RUNTIME_DIR", xdg_runtime_dir.path()),
-            ])
+            .env_clear()
             .args([
                 "--nopidfile",
                 "--nofork",
                 "--config-file",
                 // TODO disable notifications service
                 env!("DBUS_SESSION_CONFIG_FILE"),
-                "--address",
-                &server_address,
             ])
             .stdout(Stdio::piped())
             .stderr(Stdio::piped())
@@ -222,24 +204,9 @@ impl DBusSession {
             })
             .unwrap();
 
-        Ok(Self {
-            _process: DroppyChild(Some(process)),
-            _socket_dir: socket_dir,
-            _xdg_runtime_dir: xdg_runtime_dir,
-            server_address,
-            _home_dir: home_dir,
-        })
+        Ok(Self(DroppyChild(Some(process))))
     }
 }
-
-impl EnvProvider for DBusSession {
-    fn envs(&self) -> impl IntoIterator<Item = (impl AsRef<OsStr>, impl AsRef<OsStr>)> {
-        [("DBUS_SESSION_BUS_ADDRESS", &self.server_address)]
-    }
-}
-
-#[static_init::dynamic(drop)]
-static mut DBUS_SESSION: DBusSession = DBusSession::spawn().unwrap();
 
 impl Subject {
     async fn connect_to_browser(&self) -> chromiumoxide::Result<Browser> {
@@ -250,7 +217,7 @@ impl Subject {
             handler
                 .for_each(async |v| {
                     if let Err(e) = v {
-                        eprintln!("{e}");
+                        eprintln!("browser handler: {e}");
                     }
                 })
                 .await;
@@ -272,17 +239,25 @@ impl Subject {
 struct FreshBrowser {
     instance: Browser,
     _handler_task: Option<JoinHandle<()>>,
+    // TODO make sure this is successfully cleaned up.
+    // need to await on (async) browser close prior to dropping
+    // so perhaps instead of this being a struct,
+    // it'll be a function with_fresh_browser that takes a closure
+    // and performs the async termination
     _data_dir: TempDir,
 }
 
 impl FreshBrowser {
     async fn spawn() -> anyhow::Result<Self> {
-        let data_dir = tempdir()?;
+        let data_dir = tempfile::Builder::new()
+            .prefix("chromium-data-dir-")
+            .tempdir()?;
+
         let (browser, handler) = Browser::launch(
             BrowserConfig::builder()
                 .chrome_executable(Path::new(env!("CHROMIUM_BIN_PATH")).join("chromium"))
                 .user_data_dir(data_dir.path())
-                .envs(DBUS_SESSION.read().envs_owned())
+                .env("DISPLAY", Xvfb::DISPLAY)
                 .build()
                 .map_err(|e| anyhow!(e))?,
         )
@@ -302,11 +277,7 @@ impl FreshBrowser {
 
 struct Fixture {
     root: TempDir,
-    // TODO which of these are actually needed?
-    xdg_config_home: TempDir,
-    xdg_cache_home: TempDir,
     build_command: NuExecutable,
-    home: TempDir,
     subject_path_env_var: BTreeSet<&'static str>,
 }
 
@@ -317,20 +288,8 @@ impl Fixture {
             "not-hidden-",
         )?;
 
-        let xdg_config_home = tempfile::Builder::new()
-            .permissions(Permissions::from_mode(0o755))
-            .tempdir()?;
-
-        let xdg_cache_home = tempfile::Builder::new()
-            .permissions(Permissions::from_mode(0o755))
-            .tempdir()?;
-
-        let home = tempfile::Builder::new()
-            .permissions(Permissions::from_mode(0o755))
-            .tempdir()?;
-
         let subject_path_env_var =
-            BTreeSet::from_iter([env!("GIT_BIN_PATH"), env!("CHROMIUM_BIN_PATH")].to_vec());
+            BTreeSet::from_iter([env!("CHROMIUM_BIN_PATH"), env!("GIT_BIN_PATH")].to_vec());
 
         let build_command = NuExecutable::new(&formatdoc! {r#"
             if ($env.SERVE_PATH | path exists) {{
@@ -360,9 +319,6 @@ impl Fixture {
 
         let fixture = Self {
             root,
-            xdg_config_home,
-            xdg_cache_home,
-            home,
             subject_path_env_var,
             build_command,
         };
@@ -398,13 +354,12 @@ impl Fixture {
             .as_mut()
             .context("obtaining subject stdout mutable reference")?;
 
-        let mut line = String::new();
-        let mut stdout_buf = tokio::io::BufReader::new(stdout);
+        let mut stdout_lines = BufReader::new(stdout).lines();
 
-        stdout_buf
-            .read_line(&mut line)
-            .await
-            .context("reading subject stdout line")?;
+        let line = stdout_lines
+            .next_line()
+            .await?
+            .context("failed to read a single subject stdout line")?;
 
         let state_for_testing = serde_json::from_str(&line)
             .with_context(|| format!("failed to parse state for testing: {line:?}"))?;
@@ -421,12 +376,14 @@ impl Fixture {
         command
             .kill_on_drop(true)
             .current_dir(&self.root)
+            .env_clear()
+            .env("DISPLAY", Xvfb::DISPLAY)
             .env(StateForTesting::ENV_VAR, "true")
             .env(
                 "PATH",
                 std::env::join_paths(&self.subject_path_env_var).unwrap(),
             )
-            .envs(self.envs())
+            .env("SRC_PATH", self.src_path())
             .arg(self.build_command.as_os_str());
 
         command
@@ -438,42 +395,6 @@ impl Fixture {
 
     fn serve_path(&self) -> PathBuf {
         self.root.path().join(SERVE_DIR)
-    }
-}
-
-impl EnvProvider for Fixture {
-    fn envs(&self) -> impl IntoIterator<Item = (impl AsRef<OsStr>, impl AsRef<OsStr>)> {
-        let mut envs = DISPLAY_SERVER
-            .read()
-            .envs_owned()
-            .into_iter()
-            .chain(DBUS_SESSION.read().envs_owned())
-            .collect::<Vec<_>>();
-
-        envs.push((
-            "SRC_PATH".to_string(),
-            self.src_path().to_str().unwrap().to_string(),
-        ));
-
-        // Browsers by default have needs
-        envs.push((
-            "XDG_CONFIG_HOME".to_string(),
-            self.xdg_config_home.path().to_str().unwrap().to_string(),
-        ));
-
-        // Browsers by default have needs
-        envs.push((
-            "XDG_CACHE_HOME".to_string(),
-            self.xdg_cache_home.path().to_str().unwrap().to_string(),
-        ));
-
-        // Browsers by default have needs
-        envs.push((
-            "HOME".to_string(),
-            self.home.path().to_str().unwrap().to_string(),
-        ));
-
-        envs
     }
 }
 
@@ -784,7 +705,7 @@ async fn sigterm() {
     let fixture = Fixture::new().await.unwrap();
     let mut subject = fixture.spawn_subject().await.unwrap();
     let status = subject.process.kill_wait(Signal::SIGTERM).await.unwrap();
-    assert!(status.success());
+    assert_eq!(status.code(), Some(0));
 }
 
 #[tokio::test]
@@ -792,7 +713,7 @@ async fn sigint() {
     let fixture = Fixture::new().await.unwrap();
     let mut subject = fixture.spawn_subject().await.unwrap();
     let status = subject.process.kill_wait(Signal::SIGINT).await.unwrap();
-    assert!(status.success());
+    assert_eq!(status.code(), Some(0));
 }
 
 #[tokio::test]
@@ -800,7 +721,7 @@ async fn sigquit() {
     let fixture = Fixture::new().await.unwrap();
     let mut subject = fixture.spawn_subject().await.unwrap();
     let status = subject.process.kill_wait(Signal::SIGQUIT).await.unwrap();
-    assert!(status.success());
+    assert_eq!(status.code(), Some(0));
 }
 
 #[tokio::test]
@@ -808,7 +729,7 @@ async fn cannot_find_git_executable() {
     let mut fixture = Fixture::new().await.unwrap();
     fixture.subject_path_env_var.remove(env!("GIT_BIN_PATH"));
     let output = fixture.subject_command().output().await.unwrap();
-    assert!(!output.status.success());
+    assert_eq!(output.status.code(), Some(101));
     let stderr = String::from_utf8(output.stderr).unwrap();
     assert!(stderr.contains("failed to run "), "{stderr}");
 }
@@ -822,7 +743,7 @@ async fn cannot_find_browser_executable() {
         .remove(env!("CHROMIUM_BIN_PATH"));
 
     let output = fixture.subject_command().output().await.unwrap();
-    assert!(!output.status.success());
+    assert_eq!(output.status.code(), Some(101));
     let stderr = String::from_utf8(output.stderr).unwrap();
 
     assert!(
@@ -840,7 +761,7 @@ async fn not_inside_a_git_work_tree() {
         .unwrap();
 
     let output = fixture.subject_command().output().await.unwrap();
-    assert!(!output.status.success());
+    assert_eq!(output.status.code(), Some(101));
     let stderr = String::from_utf8(output.stderr).unwrap();
     assert!(stderr.contains("not a git repository"), "{stderr}");
 }
@@ -850,7 +771,7 @@ async fn build_command_not_found() {
     let fixture = Fixture::new().await.unwrap();
     std::fs::remove_file(&*fixture.build_command).unwrap();
     let output = fixture.subject_command().output().await.unwrap();
-    assert!(!output.status.success());
+    assert_eq!(output.status.code(), Some(101));
     let stderr = String::from_utf8(output.stderr).unwrap();
     assert!(stderr.contains("No such file or directory"), "{stderr}");
 }
@@ -864,7 +785,7 @@ async fn build_command_not_executable() {
         .unwrap();
 
     let output = fixture.subject_command().output().await.unwrap();
-    assert!(!output.status.success());
+    assert_eq!(output.status.code(), Some(101));
     let stderr = String::from_utf8(output.stderr).unwrap();
     assert!(stderr.contains("Permission denied"), "{stderr}");
 }
@@ -877,18 +798,18 @@ async fn build_command_stderr() {
     fixture.build_command(NuExecutable::new("print -e 'some stderr line'").unwrap());
     let mut subject = fixture.spawn_subject().await.unwrap();
 
-    let mut stderr_lines =
-        tokio::io::BufReader::new(subject.process.stderr.take().unwrap()).lines();
+    let mut stderr_lines = BufReader::new(subject.process.stderr.as_mut().unwrap()).lines();
 
     loop {
         let line = stderr_lines.next_line().await.unwrap().unwrap();
+
         if line.contains("build command stderr: some stderr line") {
             break;
         }
     }
 
     let status = subject.process.kill_wait(Signal::SIGTERM).await.unwrap();
-    assert!(status.success());
+    assert_eq!(status.code(), Some(0));
 }
 
 #[tokio::test]
@@ -897,8 +818,7 @@ async fn build_command_stdout() {
     fixture.build_command(NuExecutable::new("print 'some stdout line'").unwrap());
     let mut subject = fixture.spawn_subject().await.unwrap();
 
-    let mut stderr_lines =
-        tokio::io::BufReader::new(subject.process.stderr.take().unwrap()).lines();
+    let mut stderr_lines = BufReader::new(subject.process.stderr.take().unwrap()).lines();
 
     loop {
         let line = stderr_lines.next_line().await.unwrap().unwrap();
@@ -908,7 +828,7 @@ async fn build_command_stdout() {
     }
 
     let status = subject.process.kill_wait(Signal::SIGTERM).await.unwrap();
-    assert!(status.success());
+    assert_eq!(status.code(), Some(0));
 }
 
 #[tokio::test]
@@ -922,7 +842,7 @@ async fn build_command_failure() {
         .spawn()
         .unwrap();
 
-    let mut stderr_lines = tokio::io::BufReader::new(subject.stderr.take().unwrap()).lines();
+    let mut stderr_lines = BufReader::new(subject.stderr.take().unwrap()).lines();
 
     loop {
         let line = stderr_lines.next_line().await.unwrap().unwrap();
@@ -932,7 +852,7 @@ async fn build_command_failure() {
     }
 
     let status = subject.wait().await.unwrap();
-    assert!(!status.success());
+    assert_eq!(status.code(), Some(101));
 }
 
 #[tokio::test]
@@ -979,7 +899,7 @@ async fn serve_path_not_git_ignored() {
         .spawn()
         .unwrap();
 
-    let mut stderr_lines = tokio::io::BufReader::new(subject.stderr.take().unwrap()).lines();
+    let mut stderr_lines = BufReader::new(subject.stderr.take().unwrap()).lines();
 
     loop {
         let line = stderr_lines.next_line().await.unwrap().unwrap();
@@ -995,7 +915,7 @@ async fn serve_path_not_git_ignored() {
     }
 
     let status = subject.wait().await.unwrap();
-    assert!(!status.success());
+    assert_eq!(status.code(), Some(101));
 }
 
 #[tokio::test]

@@ -23,36 +23,49 @@
         CHROMIUM_BIN_PATH = "${pkgs.chromium}/bin";
       };
 
-      packages.default = craneLib.buildPackage {
-        inherit (psArgs.config.checks) cargoArtifacts;
-        env = psArgs.config.buildEnv // psArgs.config.checkEnv;
+      packages.default =
+        psArgs.config.buildArgs
+        // {
+          inherit (psArgs.config.checks) cargoArtifacts;
+          env = lib.mergeAttrsList [
+            psArgs.config.buildEnv
+            psArgs.config.checkEnv
+            { HOME = "/build"; }
+          ];
 
-        src =
-          [
-            config.filesets.manifest
-            config.filesets.lockFile
-            config.filesets.sourceFiles
-          ]
-          |> lib.fileset.unions
-          |> toSource;
-      };
-
-      make-shells.default = {
-        inputsFrom = [ psArgs.config.packages.default ];
-        env = psArgs.config.buildEnv // psArgs.config.checkEnv;
-      };
-
-      checks = {
-        cargoArtifacts = craneLib.buildDepsOnly {
-          env = psArgs.config.buildEnv;
           src =
             [
               config.filesets.manifest
               config.filesets.lockFile
+              config.filesets.sourceFiles
             ]
             |> lib.fileset.unions
             |> toSource;
-        };
+        }
+        |> craneLib.buildPackage;
+
+      make-shells.default = {
+        inputsFrom = [
+          psArgs.config.packages.default
+          psArgs.config.checks.clippy
+        ];
+        env = psArgs.config.buildEnv // psArgs.config.checkEnv;
+      };
+
+      checks = {
+        cargoArtifacts =
+          psArgs.config.buildArgs
+          // {
+            env = psArgs.config.buildEnv;
+            src =
+              [
+                config.filesets.manifest
+                config.filesets.lockFile
+              ]
+              |> lib.fileset.unions
+              |> toSource;
+          }
+          |> craneLib.buildDepsOnly;
 
         package = psArgs.config.packages.default;
 

@@ -6,8 +6,6 @@
       LOG = "trace";
     };
 
-    buildArgs = {
-      dontStrip = true;
-    };
+    buildArgs.dontStrip = true;
   };
 }

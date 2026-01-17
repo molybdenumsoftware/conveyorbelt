@@ -20,7 +20,7 @@ use static_web_server::{
 };
 use tempfile::tempdir;
 use tokio::process::Command;
-use tracing::{debug, info, warn};
+use tracing::{debug, info, level_filters::LevelFilter, warn};
 
 use crate::common::{ForStdoutputLine as _, StateForTesting};
 
@@ -32,7 +32,11 @@ struct Cli {
 
 #[tokio::main]
 async fn main() {
-    let filter = tracing_subscriber::filter::EnvFilter::from_env(env!("LOG_FILTER_VAR_NAME"));
+    let filter = tracing_subscriber::filter::EnvFilter::builder()
+        .with_default_directive(LevelFilter::INFO.into())
+        .with_env_var(env!("LOG_FILTER_VAR_NAME"))
+        .from_env_lossy();
+
     tracing_subscriber::fmt()
         .with_writer(std::io::stderr)
         .with_env_filter(filter)

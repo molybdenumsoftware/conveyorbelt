@@ -25,6 +25,7 @@
           buildArgs.strictDeps = true;
           _module.args.craneLib = inputs.crane.mkLib pkgs;
           gitignore = [ "/target" ];
+
           files.files = [
             {
               path_ = "Cargo.toml";
