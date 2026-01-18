@@ -2,17 +2,20 @@
 mod common;
 
 use std::{
+    env::current_dir,
     mem,
     net::{IpAddr, Ipv4Addr, SocketAddr, TcpListener},
     path::PathBuf,
     process::Stdio,
     sync::Arc,
+    time::Duration,
 };
 
 use anyhow::{Context, anyhow};
 use chromiumoxide::{Browser, BrowserConfig};
 use clap::Parser as _;
 use hyper::StatusCode;
+use ignore_files::IgnoreFilter;
 use static_web_server::{
     handler::{RequestHandler, RequestHandlerOpts},
     service::RouterService,
@@ -22,6 +25,8 @@ use tempfile::tempdir;
 use tokio::process::Command;
 use tracing::{debug, info, level_filters::LevelFilter, warn};
 use watchexec::Watchexec;
+use watchexec_events::filekind::FileEventKind;
+use watchexec_filterer_ignore::IgnoreFilterer;
 
 use crate::common::{ForStdoutputLine as _, StateForTesting};
 
@@ -29,6 +34,59 @@ use crate::common::{ForStdoutputLine as _, StateForTesting};
 struct Cli {
     /// The build command
     build_command: PathBuf,
+}
+
+#[derive(Debug)]
+struct EventFilter(IgnoreFilterer);
+
+impl EventFilter {
+    async fn new() -> anyhow::Result<Self> {
+        let mut ignore_filter = IgnoreFilter::new(current_dir()?, &[]).await?;
+        ignore_filter.finish();
+        Ok(Self(IgnoreFilterer(ignore_filter)))
+    }
+}
+
+impl watchexec::filter::Filterer for EventFilter {
+    fn check_event(
+        &self,
+        event: &watchexec_events::Event,
+        priority: watchexec_events::Priority,
+    ) -> Result<bool, watchexec::error::RuntimeError> {
+        let dot_git = current_dir()
+            // TODO static to avoid this conversion
+            .map_err(|err| watchexec::error::RuntimeError::IoError {
+                about: "current dir",
+                err,
+            })?
+            .join(".git");
+        if let Some(path) = event.tags.iter().find_map(|tag| {
+            if let watchexec_events::Tag::Path { path, .. } = tag {
+                Some(path)
+            } else {
+                None
+            }
+        }) && path.starts_with(dot_git)
+        {
+            return Ok(false);
+        };
+
+        if let Some(kind) = event.tags.iter().find_map(|tag| {
+            if let watchexec_events::Tag::FileEventKind(kind) = tag {
+                Some(kind)
+            } else {
+                None
+            }
+        }) {
+            let (FileEventKind::Create(_) | FileEventKind::Modify(_) | FileEventKind::Remove(_)) =
+                kind
+            else {
+                return Ok(false);
+            };
+        }
+
+        self.0.check_event(event, priority)
+    }
 }
 
 #[tokio::main]
@@ -117,7 +175,6 @@ async fn main() {
             let serve_path_clone = serve_path_clone.clone();
 
             async move {
-                dbg!(&action);
                 info!("change detected: {:?}", action.events);
 
                 let mut build_command = Command::new(build_command_clone);
@@ -165,7 +222,9 @@ async fn main() {
     })
     .unwrap();
 
-    wx.config.pathset(["."]);
+    wx.config.throttle(Duration::ZERO);
+    wx.config.pathset([current_dir().unwrap()]);
+    wx.config.filterer(EventFilter::new().await.unwrap());
 
     wx.main();
 

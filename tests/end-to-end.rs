@@ -228,6 +228,8 @@ impl Subject {
                 .await?
                 .context("reading subject stderr line")?;
 
+            eprintln!("subject stderr: {line}");
+
             if line.contains(pat) {
                 break line;
             }
@@ -987,25 +989,31 @@ async fn build_command_not_executed_on_git_ignored_file_creation() {
 
     let mut subject = fixture.spawn_subject_without_logging().await.unwrap();
 
+    subject
+        .wait_stderr_line_contains("build command succeeded")
+        .await
+        .unwrap();
+
     fixture
         .write_source_file("foo", "will not trigger")
         .await
         .unwrap();
 
+    // TODO run build command initially
     fixture
         .write_source_file("bar", "will trigger")
         .await
         .unwrap();
 
-    let line = subject
-        .wait_stderr_line_contains("change detected: ")
+    subject
+        .wait_stderr_line_contains("build command succeeded")
         .await
         .unwrap();
 
-    eprintln!("{line}");
-
     assert_eq!(fixture.build_command_invocation_count().await.unwrap(), 2);
 }
+
+// TODO test for logging of detected changes
 
 #[tokio::test]
 #[ignore = "todo"]

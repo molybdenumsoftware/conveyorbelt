@@ -13,12 +13,15 @@ in
   cargoManifest = {
     dependencies =
       lib.genAttrs [
+        "ignore-files"
         "serde"
         "serde_json"
         "static-web-server"
         "tempfile"
         "tracing"
         "watchexec"
+        "watchexec-events"
+        "watchexec-filterer-ignore"
       ] (_: { })
       |> lib.mergeAttrs {
         chromiumoxide.features = [ "tokio-runtime" ];
