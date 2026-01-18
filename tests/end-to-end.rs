@@ -969,7 +969,6 @@ async fn serve_path_not_git_ignored() {
 }
 
 #[tokio::test]
-#[ignore = "wip"]
 async fn build_command_not_executed_on_git_ignored_file_creation() {
     let fixture = Fixture::new().await.unwrap();
 
