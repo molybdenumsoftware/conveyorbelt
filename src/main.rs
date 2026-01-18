@@ -143,7 +143,7 @@ async fn main() {
     if build_process_exit_status.success() {
         info!("build command succeeded");
     } else {
-        panic!("build command {build_command:?} exited with {build_process_exit_status}",);
+        info!("build command {build_command:?} exited with {build_process_exit_status}",);
     }
 
     let address = SocketAddr::from((IpAddr::V4(Ipv4Addr::LOCALHOST), 0));

@@ -872,15 +872,10 @@ async fn build_command_stderr() {
 
     let mut subject = fixture.spawn_subject_without_logging().await.unwrap();
 
-    let mut stderr_lines = BufReader::new(subject.process.stderr.as_mut().unwrap()).lines();
-
-    loop {
-        let line = stderr_lines.next_line().await.unwrap().unwrap();
-
-        if line.contains("build command stderr: some stderr line") {
-            break;
-        }
-    }
+    subject
+        .wait_stderr_line_contains("build command stderr: some stderr line")
+        .await
+        .unwrap();
 
     let status = subject.process.kill_wait(Signal::SIGTERM).await.unwrap();
     assert_eq!(status.code(), Some(0));
@@ -892,43 +887,27 @@ async fn build_command_stdout() {
     fixture.build_command("print 'some stdout line'").unwrap();
     let mut subject = fixture.spawn_subject_without_logging().await.unwrap();
 
-    let mut stderr_lines = BufReader::new(subject.process.stderr.take().unwrap()).lines();
-
-    loop {
-        let line = stderr_lines.next_line().await.unwrap().unwrap();
-        if line.contains("build command stdout: some stdout line") {
-            break;
-        }
-    }
+    subject
+        .wait_stderr_line_contains("build command stdout: some stdout line")
+        .await
+        .unwrap();
 
     let status = subject.process.kill_wait(Signal::SIGTERM).await.unwrap();
     assert_eq!(status.code(), Some(0));
 }
 
 #[tokio::test]
-async fn build_command_failure() {
+async fn build_command_failure_followed_by_success() {
     let mut fixture = Fixture::new().await.unwrap();
     fixture.build_command("exit 1").unwrap();
+    let mut subject = fixture.spawn_subject_without_logging().await.unwrap();
 
-    let mut subject = fixture
-        .subject_command()
-        .stderr(Stdio::piped())
-        .spawn()
+    subject
+        .wait_stderr_line_contains("exited with exit status: 1")
+        .await
         .unwrap();
 
-    let mut stderr_lines = BufReader::new(subject.stderr.take().unwrap()).lines();
-
-    loop {
-        let line = stderr_lines.next_line().await.unwrap().unwrap();
-        if line.contains("build command ") && line.contains("exited with exit status: 1") {
-            break;
-        }
-    }
-
-    // TODO nah, build command failures should be tolerated
-    // in fact, there should be a test for that
-    let status = subject.wait().await.unwrap();
-    assert_eq!(status.code(), Some(101));
+    // TODO success part
 }
 
 #[tokio::test]
