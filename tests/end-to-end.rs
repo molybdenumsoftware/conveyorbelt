@@ -931,8 +931,6 @@ async fn build_command_failure() {
     assert_eq!(status.code(), Some(101));
 }
 
-// TODO builder pattern fixture
-
 #[tokio::test]
 async fn browser_window_not_at_default_chromiumoxide_dimensions() {
     let fixture = Fixture::new().await.unwrap();
