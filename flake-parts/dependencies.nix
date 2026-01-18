@@ -18,6 +18,7 @@ in
         "static-web-server"
         "tempfile"
         "tracing"
+        "watchexec"
       ] (_: { })
       |> lib.mergeAttrs {
         chromiumoxide.features = [ "tokio-runtime" ];
@@ -40,6 +41,7 @@ in
         ];
       }
       |> applyDefaults;
+
     dev-dependencies =
       lib.genAttrs [
         "futures"

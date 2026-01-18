@@ -986,19 +986,25 @@ async fn build_command_not_executed_on_git_ignored_file_creation() {
     drop(gitignore);
 
     let mut subject = fixture.spawn_subject_without_logging().await.unwrap();
-    assert_eq!(fixture.build_command_invocation_count().await.unwrap(), 1);
 
     fixture
         .write_source_file("foo", "will not trigger")
         .await
         .unwrap();
 
-    subject
-        .wait_stderr_line_contains("file creation, file git ignored")
+    fixture
+        .write_source_file("bar", "will trigger")
         .await
         .unwrap();
 
-    assert_eq!(fixture.build_command_invocation_count().await.unwrap(), 1);
+    let line = subject
+        .wait_stderr_line_contains("change detected: ")
+        .await
+        .unwrap();
+
+    eprintln!("{line}");
+
+    assert_eq!(fixture.build_command_invocation_count().await.unwrap(), 2);
 }
 
 #[tokio::test]
@@ -1038,3 +1044,63 @@ async fn browser_reloads_following_build_command_execution() {
 }
 
 // TODO make sure `.gitignore` is not the only ignore file that is used in testing
+// TODO various other events do not trigger anything:
+// [
+//   Event {
+//     tags: [Source(Filesystem), FileEventKind(Access(Open(Any))),
+//     Path { path: "/tmp/not-hidden-PrbUj4/src", file_type: Some(Dir) }],
+//     metadata: {}
+//   },
+//   Event {
+//     tags: [Source(Filesystem), FileEventKind(Access(Open(Any))), Path { path: "/tmp/not-hidden-PrbUj4/.git/refs", file_type: Some(Dir) }],
+//     metadata: {}
+//   },
+//   Event {
+//     tags: [Source(Filesystem), FileEventKind(Access(Open(Any))), Path { path: "/tmp/not-hidden-PrbUj4/.git/objects", file_type: Some(Dir) }],
+//     metadata: {}
+//   },
+//   Event {
+//     tags: [Source(Filesystem), FileEventKind(Access(Open(Any))), Path { path: "/tmp/not-hidden-PrbUj4/.git/objects/info", file_type: Some(Dir) }],
+//     metadata: {}
+//   },
+//   Event {
+//     tags: [Source(Filesystem), FileEventKind(Access(Open(Any))), Path { path: "/tmp/not-hidden-PrbUj4/.git/objects/pack", file_type: Some(Dir) }],
+//     metadata: {}
+//   },
+//   Event {
+//     tags: [Source(Filesystem), FileEventKind(Access(Open(Any))), Path { path: "/tmp/not-hidden-PrbUj4/.git/refs/heads", file_type: Some(Dir) }],
+//     metadata: {}
+//   },
+//   Event {
+//     tags: [Source(Filesystem), FileEventKind(Access(Open(Any))), Path { path: "/tmp/not-hidden-PrbUj4/.git", file_type: Some(Dir) }],
+//     metadata: {}
+//   },
+//   Event {
+//     tags: [Source(Filesystem), FileEventKind(Access(Open(Any))), Path { path: "/tmp/not-hidden-PrbUj4/.git/refs/tags", file_type: Some(Dir) }],
+//     metadata: {}
+//   },
+//   Event {
+//     tags: [Source(Filesystem), FileEventKind(Access(Open(Any))), Path { path: "/tmp/not-hidden-PrbUj4", file_type: Some(Dir) }],
+//     metadata: {}
+//   },
+//   Event {
+//     tags: [Source(Filesystem), FileEventKind(Access(Open(Any))), Path { path: "/tmp/not-hidden-PrbUj4/src", file_type: Some(Dir) }],
+//     metadata: {}
+//   },
+//   Event {
+//     tags: [Source(Filesystem), FileEventKind(Access(Open(Any))), Path { path: "/tmp/not-hidden-PrbUj4/src", file_type: Some(Dir) }],
+//     metadata: {}
+//   },
+//   Event {
+//     tags: [Source(Filesystem), FileEventKind(Create(Folder)), Path { path: "/tmp/not-hidden-PrbUj4/serve", file_type: Some(Dir) }],
+//     metadata: {}
+//   },
+//   Event {
+//     tags: [Source(Filesystem), FileEventKind(Access(Open(Any))), Path { path: "/tmp/not-hidden-PrbUj4/serve", file_type: Some(Dir) }],
+//     metadata: {}
+//   },
+//   Event {
+//     tags: [Source(Filesystem), FileEventKind(Modify(Metadata(Any))), Path { path: "/tmp/not-hidden-PrbUj4/serve", file_type: Some(Dir) }],
+//     metadata: {}
+//   }
+// ]

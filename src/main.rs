@@ -21,6 +21,7 @@ use static_web_server::{
 use tempfile::tempdir;
 use tokio::process::Command;
 use tracing::{debug, info, level_filters::LevelFilter, warn};
+use watchexec::Watchexec;
 
 use crate::common::{ForStdoutputLine as _, StateForTesting};
 
@@ -109,42 +110,64 @@ async fn main() {
         );
     }
 
-    let mut build_command = Command::new(build_command);
+    let serve_path_clone = serve_path.clone();
+    let wx = Watchexec::new_async(move |action| {
+        Box::new({
+            let build_command_clone = build_command.clone();
+            let serve_path_clone = serve_path_clone.clone();
 
-    build_command
-        .env("SERVE_PATH", &serve_path)
-        .kill_on_drop(true)
-        .stderr(Stdio::piped())
-        .stdout(Stdio::piped());
+            async move {
+                dbg!(&action);
+                info!("change detected: {:?}", action.events);
 
-    let mut build_process = build_command
-        .spawn()
-        .with_context(|| format!("failed to spawn build command {build_command:?}"))
-        .unwrap();
+                let mut build_command = Command::new(build_command_clone);
 
-    build_process
-        .for_stdout_line(|line| {
-            info!("build command stdout: {line}");
+                build_command
+                    .env("SERVE_PATH", &serve_path_clone)
+                    .kill_on_drop(true)
+                    .stderr(Stdio::piped())
+                    .stdout(Stdio::piped());
+
+                let mut build_process = build_command
+                    .spawn()
+                    .with_context(|| format!("failed to spawn build command {build_command:?}"))
+                    .unwrap();
+
+                build_process
+                    .for_stdout_line(|line| {
+                        info!("build command stdout: {line}");
+                    })
+                    .unwrap();
+
+                build_process
+                    .for_stderr_line(|line| {
+                        info!("build command stderr: {line}");
+                    })
+                    .unwrap();
+
+                let build_process_exit_status = build_process
+                    .wait()
+                    .await
+                    .context("failed to obtain build process exit status")
+                    .unwrap();
+
+                if build_process_exit_status.success() {
+                    info!("build command succeeded");
+                } else {
+                    info!(
+                        "build command {build_command:?} exited with {build_process_exit_status}"
+                    );
+                }
+
+                action
+            }
         })
-        .unwrap();
+    })
+    .unwrap();
 
-    build_process
-        .for_stderr_line(|line| {
-            info!("build command stderr: {line}");
-        })
-        .unwrap();
+    wx.config.pathset(["."]);
 
-    let build_process_exit_status = build_process
-        .wait()
-        .await
-        .context("failed to obtain build process exit status")
-        .unwrap();
-
-    if build_process_exit_status.success() {
-        info!("build command succeeded");
-    } else {
-        info!("build command {build_command:?} exited with {build_process_exit_status}",);
-    }
+    wx.main();
 
     let address = SocketAddr::from((IpAddr::V4(Ipv4Addr::LOCALHOST), 0));
 
