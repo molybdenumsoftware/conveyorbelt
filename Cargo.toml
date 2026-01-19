@@ -22,6 +22,10 @@ default-features = false
 features = ["http1", "server"]
 version = "0"
 
+[dependencies.ignore-files]
+default-features = false
+version = "*"
+
 [dependencies.serde]
 default-features = false
 version = "*"
@@ -50,6 +54,18 @@ version = "*"
 [dependencies.tracing-subscriber]
 default-features = false
 features = ["env-filter"]
+version = "*"
+
+[dependencies.watchexec]
+default-features = false
+version = "*"
+
+[dependencies.watchexec-events]
+default-features = false
+version = "*"
+
+[dependencies.watchexec-filterer-ignore]
+default-features = false
 version = "*"
 
 [dev-dependencies.derive_more]

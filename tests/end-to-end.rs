@@ -25,13 +25,13 @@ use indoc::formatdoc;
 use maud::{DOCTYPE, html};
 use nix::{sys::signal::Signal, unistd::Pid};
 use sysinfo::{ProcessRefreshKind, RefreshKind};
-use tempfile::{TempDir, TempPath};
+use tempfile::{NamedTempFile, TempDir, TempPath};
 use tokio::{
-    io::{AsyncBufReadExt as _, BufReader},
+    io::{AsyncBufReadExt as _, AsyncWriteExt as _, BufReader},
     task::JoinHandle,
 };
 
-use crate::common::{ForStdoutputLine as _, StateForTesting};
+use crate::common::{ForStdoutputLine as _, StateForTesting, TESTING_MODE};
 
 const SERVE_DIR: &str = env!("SERVE_DIR");
 
@@ -152,28 +152,6 @@ impl SharedEnvironment {
 #[derive(Debug, derive_more::Deref, derive_more::DerefMut)]
 struct NuExecutable(TempPath);
 
-impl NuExecutable {
-    fn new(content: &str) -> anyhow::Result<Self> {
-        const NU_EXECUTABLE: &str = env!("NU_EXECUTABLE");
-
-        let mut temp_file = tempfile::Builder::new()
-            .permissions(Permissions::from_mode(0o755))
-            .suffix(".nu")
-            .tempfile()
-            .context("temporary build command file")?;
-
-        temp_file.as_file_mut().write_all(
-            formatdoc! {r#"
-                #! {NU_EXECUTABLE}
-                {content}
-            "#}
-            .as_bytes(),
-        )?;
-
-        Ok(Self(temp_file.into_temp_path()))
-    }
-}
-
 #[derive(Debug)]
 struct DBusSession(#[allow(dead_code)] DroppyChild);
 
@@ -185,7 +163,6 @@ impl DBusSession {
                 "--nopidfile",
                 "--nofork",
                 "--config-file",
-                // TODO disable notifications service
                 env!("DBUS_SESSION_CONFIG_FILE"),
             ])
             .stdout(Stdio::piped())
@@ -233,17 +210,41 @@ impl Subject {
             self.state_for_testing.serve_port
         )
     }
+
+    async fn wait_stderr_line_contains(&mut self, pat: &str) -> anyhow::Result<String> {
+        let stderr = self
+            .process
+            .stderr
+            .as_mut()
+            .context("taking subject &mut stderr")?;
+
+        let mut stderr_lines = BufReader::new(stderr).lines();
+
+        // TODO instead of reading all lines, use precise log filtering?
+
+        let line = loop {
+            let line = stderr_lines
+                .next_line()
+                .await?
+                .context("reading subject stderr line")?;
+
+            eprintln!("subject stderr: {line}");
+
+            if line.contains(pat) {
+                break line;
+            }
+        };
+
+        Ok(line)
+    }
 }
 
 #[derive(Debug)]
 struct FreshBrowser {
     instance: Browser,
     _handler_task: Option<JoinHandle<()>>,
-    // TODO make sure this is successfully cleaned up.
-    // need to await on (async) browser close prior to dropping
-    // so perhaps instead of this being a struct,
-    // it'll be a function with_fresh_browser that takes a closure
-    // and performs the async termination
+    // If Browser still has open files then cleanup might fail.
+    // Waiting on AsyncDrop
     _data_dir: TempDir,
 }
 
@@ -277,6 +278,7 @@ impl FreshBrowser {
 
 struct Fixture {
     root: TempDir,
+    build_command_invocation_count_file: TempPath,
     build_command: NuExecutable,
     subject_path_env_var: BTreeSet<&'static str>,
 }
@@ -291,15 +293,21 @@ impl Fixture {
         let subject_path_env_var =
             BTreeSet::from_iter([env!("CHROMIUM_BIN_PATH"), env!("GIT_BIN_PATH")].to_vec());
 
-        let build_command = NuExecutable::new(&formatdoc! {r#"
+        let build_command_invocation_count_file = NamedTempFile::new().unwrap().into_temp_path();
+        tokio::fs::write(&build_command_invocation_count_file, "0").await?;
+
+        let build_command = Self::create_build_command(
+            &build_command_invocation_count_file,
+            &formatdoc! {r#"
             if ($env.SERVE_PATH | path exists) {{
                 rm --recursive $env.SERVE_PATH
             }}
             mkdir $env.SRC_PATH
             cp --verbose --recursive --preserve [mode, link] $env.SRC_PATH $env.SERVE_PATH
-        "#})?;
+        "#},
+        )?;
 
-        std::fs::write(root.path().join(".gitignore"), format!("/{}", SERVE_DIR)).unwrap();
+        tokio::fs::write(root.path().join(".gitignore"), format!("/{SERVE_DIR}\n")).await?;
 
         let mut git_init_command =
             tokio::process::Command::new(Path::new(env!("GIT_BIN_PATH")).join("git"));
@@ -321,26 +329,63 @@ impl Fixture {
             root,
             subject_path_env_var,
             build_command,
+            build_command_invocation_count_file,
         };
 
         std::fs::create_dir(fixture.src_path()).context("creating fixture source dir")?;
         Ok(fixture)
     }
 
-    fn build_command(&mut self, build_command: NuExecutable) {
-        self.build_command = build_command;
+    fn build_command(&mut self, content: &str) -> anyhow::Result<()> {
+        self.build_command =
+            Self::create_build_command(&self.build_command_invocation_count_file, content)?;
+
+        Ok(())
     }
 
-    fn write_source_file(
+    fn create_build_command(count_path: &Path, content: &str) -> anyhow::Result<NuExecutable> {
+        const NU_EXECUTABLE: &str = env!("NU_EXECUTABLE");
+
+        let mut temp_file = tempfile::Builder::new()
+            .permissions(Permissions::from_mode(0o755))
+            .suffix(".nu")
+            .tempfile()
+            .context("temporary build command file")?;
+
+        let count_path = count_path.to_str().context("UTF-8 path")?;
+
+        temp_file.as_file_mut().write_all(
+            formatdoc! {r#"
+                #! {NU_EXECUTABLE}
+
+                open {count_path} | into int | $in + 1 | save -f {count_path}
+
+                {content}
+            "#}
+            .as_bytes(),
+        )?;
+
+        Ok(NuExecutable(temp_file.into_temp_path()))
+    }
+
+    async fn write_source_file(
         &self,
         path: impl AsRef<Path>,
         content: impl ToBytes,
     ) -> std::io::Result<()> {
         let content = content.to_bytes();
-        std::fs::write(self.src_path().join(path), content)
+        tokio::fs::write(self.src_path().join(path), content).await
+    }
+
+    async fn spawn_subject_without_logging(&self) -> anyhow::Result<Subject> {
+        self.spawn_subject_with(false).await
     }
 
     async fn spawn_subject(&self) -> anyhow::Result<Subject> {
+        self.spawn_subject_with(true).await
+    }
+
+    async fn spawn_subject_with(&self, log_stderr: bool) -> anyhow::Result<Subject> {
         let mut subject_command = self.subject_command();
 
         subject_command
@@ -348,6 +393,14 @@ impl Fixture {
             .stderr(Stdio::piped());
 
         let mut process = subject_command.spawn().context("failed to spawn subject")?;
+
+        if log_stderr {
+            process
+                .for_stderr_line(|line| {
+                    eprintln!("subject stderr: {line}");
+                })
+                .context("handling subject stderr")?;
+        }
 
         let stdout = process
             .stdout
@@ -378,7 +431,7 @@ impl Fixture {
             .current_dir(&self.root)
             .env_clear()
             .env("DISPLAY", Xvfb::DISPLAY)
-            .env(StateForTesting::ENV_VAR, "true")
+            .env(TESTING_MODE, "true")
             .env(
                 "PATH",
                 std::env::join_paths(&self.subject_path_env_var).unwrap(),
@@ -396,6 +449,12 @@ impl Fixture {
     fn serve_path(&self) -> PathBuf {
         self.root.path().join(SERVE_DIR)
     }
+
+    async fn build_command_invocation_count(&self) -> anyhow::Result<u8> {
+        let count = tokio::fs::read_to_string(&self.build_command_invocation_count_file).await?;
+        let count = count.parse::<u8>()?;
+        Ok(count)
+    }
 }
 
 trait ToBytes {
@@ -411,6 +470,12 @@ impl ToBytes for &HtmlPage {
 impl ToBytes for HtmlPage {
     fn to_bytes(self) -> Vec<u8> {
         (&self).to_bytes()
+    }
+}
+
+impl ToBytes for &str {
+    fn to_bytes(self) -> Vec<u8> {
+        self.as_bytes().to_vec()
     }
 }
 
@@ -454,6 +519,7 @@ async fn page_content_is_served() {
 
     fixture
         .write_source_file("foo.html", HtmlPage::new().title("some page"))
+        .await
         .unwrap();
 
     let subject = fixture.spawn_subject().await.unwrap();
@@ -541,10 +607,12 @@ async fn custom_404_page() {
 
     fixture
         .write_source_file("exists.html", HtmlPage::new().title("I'm here!"))
+        .await
         .unwrap();
 
     fixture
         .write_source_file("404.html", HtmlPage::new().title("Ain't found"))
+        .await
         .unwrap();
 
     let subject = fixture.spawn_subject().await.unwrap();
@@ -569,6 +637,7 @@ async fn html_extension_can_be_omitted() {
 
     fixture
         .write_source_file("foo.html", HtmlPage::new().title("I can haz pretty path"))
+        .await
         .unwrap();
 
     let subject = fixture.spawn_subject().await.unwrap();
@@ -596,6 +665,7 @@ async fn index_html() {
 
     fixture
         .write_source_file("index.html", HtmlPage::new().title("I am root"))
+        .await
         .unwrap();
 
     let subject = fixture.spawn_subject().await.unwrap();
@@ -623,10 +693,12 @@ async fn mime_types() {
 
     fixture
         .write_source_file("file.html", HtmlPage::new().title("I'm a page"))
+        .await
         .unwrap();
 
     fixture
         .write_source_file("file.txt", HtmlPage::new().title("I am text"))
+        .await
         .unwrap();
 
     let subject = fixture.spawn_subject().await.unwrap();
@@ -660,6 +732,7 @@ async fn ignore_hidden_files() {
 
     fixture
         .write_source_file(".file.html", HtmlPage::new().title("can't find me"))
+        .await
         .unwrap();
 
     let subject = fixture.spawn_subject().await.unwrap();
@@ -682,6 +755,7 @@ async fn forbid_symlinks() {
 
     fixture
         .write_source_file("real.html", HtmlPage::new().title("real page"))
+        .await
         .unwrap();
 
     symlink("real.html", fixture.src_path().join("symlink.html")).unwrap();
@@ -790,23 +864,20 @@ async fn build_command_not_executable() {
     assert!(stderr.contains("Permission denied"), "{stderr}");
 }
 
-// TODO Xvfb various warnings
-
 #[tokio::test]
 async fn build_command_stderr() {
     let mut fixture = Fixture::new().await.unwrap();
-    fixture.build_command(NuExecutable::new("print -e 'some stderr line'").unwrap());
-    let mut subject = fixture.spawn_subject().await.unwrap();
 
-    let mut stderr_lines = BufReader::new(subject.process.stderr.as_mut().unwrap()).lines();
+    fixture
+        .build_command("print -e 'some stderr line'")
+        .unwrap();
 
-    loop {
-        let line = stderr_lines.next_line().await.unwrap().unwrap();
+    let mut subject = fixture.spawn_subject_without_logging().await.unwrap();
 
-        if line.contains("build command stderr: some stderr line") {
-            break;
-        }
-    }
+    subject
+        .wait_stderr_line_contains("build command stderr: some stderr line")
+        .await
+        .unwrap();
 
     let status = subject.process.kill_wait(Signal::SIGTERM).await.unwrap();
     assert_eq!(status.code(), Some(0));
@@ -815,44 +886,30 @@ async fn build_command_stderr() {
 #[tokio::test]
 async fn build_command_stdout() {
     let mut fixture = Fixture::new().await.unwrap();
-    fixture.build_command(NuExecutable::new("print 'some stdout line'").unwrap());
-    let mut subject = fixture.spawn_subject().await.unwrap();
+    fixture.build_command("print 'some stdout line'").unwrap();
+    let mut subject = fixture.spawn_subject_without_logging().await.unwrap();
 
-    let mut stderr_lines = BufReader::new(subject.process.stderr.take().unwrap()).lines();
-
-    loop {
-        let line = stderr_lines.next_line().await.unwrap().unwrap();
-        if line.contains("build command stdout: some stdout line") {
-            break;
-        }
-    }
+    subject
+        .wait_stderr_line_contains("build command stdout: some stdout line")
+        .await
+        .unwrap();
 
     let status = subject.process.kill_wait(Signal::SIGTERM).await.unwrap();
     assert_eq!(status.code(), Some(0));
 }
 
 #[tokio::test]
-async fn build_command_failure() {
+async fn build_command_failure_followed_by_success() {
     let mut fixture = Fixture::new().await.unwrap();
-    fixture.build_command(NuExecutable::new("exit 1").unwrap());
+    fixture.build_command("exit 1").unwrap();
+    let mut subject = fixture.spawn_subject_without_logging().await.unwrap();
 
-    let mut subject = fixture
-        .subject_command()
-        .stderr(Stdio::piped())
-        .spawn()
+    subject
+        .wait_stderr_line_contains("exited with exit status: 1")
+        .await
         .unwrap();
 
-    let mut stderr_lines = BufReader::new(subject.stderr.take().unwrap()).lines();
-
-    loop {
-        let line = stderr_lines.next_line().await.unwrap().unwrap();
-        if line.contains("build command ") && line.contains("exited with exit status: 1") {
-            break;
-        }
-    }
-
-    let status = subject.wait().await.unwrap();
-    assert_eq!(status.code(), Some(101));
+    // TODO success part
 }
 
 #[tokio::test]
@@ -893,36 +950,70 @@ async fn serve_path_not_git_ignored() {
         .await
         .unwrap();
 
-    let mut subject = fixture
+    let output = fixture
         .subject_command()
         .stderr(Stdio::piped())
-        .spawn()
+        .output()
+        .await
         .unwrap();
 
-    let mut stderr_lines = BufReader::new(subject.stderr.take().unwrap()).lines();
+    let expected_line = format!(
+        "serve path (`{}`) is not git ignored",
+        fixture.serve_path().to_str().unwrap()
+    );
 
-    loop {
-        let line = stderr_lines.next_line().await.unwrap().unwrap();
+    let stderr = String::from_utf8(output.stderr)
+        .context("stderr UTF-8")
+        .unwrap();
 
-        let expected_line = format!(
-            "serve path (`{}`) is not git ignored",
-            fixture.serve_path().to_str().unwrap()
-        );
-
-        if line.contains(&expected_line) {
-            break;
-        }
-    }
-
-    let status = subject.wait().await.unwrap();
-    assert_eq!(status.code(), Some(101));
+    assert!(stderr.contains(&expected_line));
+    assert_eq!(output.status.code(), Some(101));
 }
 
 #[tokio::test]
-#[ignore = "todo"]
 async fn build_command_not_executed_on_git_ignored_file_creation() {
-    todo!();
+    let fixture = Fixture::new().await.unwrap();
+
+    let mut gitignore = tokio::fs::OpenOptions::new()
+        .append(true)
+        .open(fixture.root.path().join(".gitignore"))
+        .await
+        .unwrap();
+
+    gitignore
+        .write_all(format!("{}\n", fixture.src_path().join("foo").to_str().unwrap()).as_bytes())
+        .await
+        .unwrap();
+
+    drop(gitignore);
+
+    let mut subject = fixture.spawn_subject_without_logging().await.unwrap();
+
+    subject
+        .wait_stderr_line_contains("build command succeeded")
+        .await
+        .unwrap();
+
+    fixture
+        .write_source_file("foo", "will not trigger")
+        .await
+        .unwrap();
+
+    // TODO run build command initially
+    fixture
+        .write_source_file("bar", "will trigger")
+        .await
+        .unwrap();
+
+    subject
+        .wait_stderr_line_contains("build command succeeded")
+        .await
+        .unwrap();
+
+    assert_eq!(fixture.build_command_invocation_count().await.unwrap(), 2);
 }
+
+// TODO test for logging of detected changes
 
 #[tokio::test]
 #[ignore = "todo"]
@@ -959,3 +1050,65 @@ async fn build_command_executed_on_file_removal() {
 async fn browser_reloads_following_build_command_execution() {
     todo!();
 }
+
+// TODO make sure `.gitignore` is not the only ignore file that is used in testing
+// TODO various other events do not trigger anything:
+// [
+//   Event {
+//     tags: [Source(Filesystem), FileEventKind(Access(Open(Any))),
+//     Path { path: "/tmp/not-hidden-PrbUj4/src", file_type: Some(Dir) }],
+//     metadata: {}
+//   },
+//   Event {
+//     tags: [Source(Filesystem), FileEventKind(Access(Open(Any))), Path { path: "/tmp/not-hidden-PrbUj4/.git/refs", file_type: Some(Dir) }],
+//     metadata: {}
+//   },
+//   Event {
+//     tags: [Source(Filesystem), FileEventKind(Access(Open(Any))), Path { path: "/tmp/not-hidden-PrbUj4/.git/objects", file_type: Some(Dir) }],
+//     metadata: {}
+//   },
+//   Event {
+//     tags: [Source(Filesystem), FileEventKind(Access(Open(Any))), Path { path: "/tmp/not-hidden-PrbUj4/.git/objects/info", file_type: Some(Dir) }],
+//     metadata: {}
+//   },
+//   Event {
+//     tags: [Source(Filesystem), FileEventKind(Access(Open(Any))), Path { path: "/tmp/not-hidden-PrbUj4/.git/objects/pack", file_type: Some(Dir) }],
+//     metadata: {}
+//   },
+//   Event {
+//     tags: [Source(Filesystem), FileEventKind(Access(Open(Any))), Path { path: "/tmp/not-hidden-PrbUj4/.git/refs/heads", file_type: Some(Dir) }],
+//     metadata: {}
+//   },
+//   Event {
+//     tags: [Source(Filesystem), FileEventKind(Access(Open(Any))), Path { path: "/tmp/not-hidden-PrbUj4/.git", file_type: Some(Dir) }],
+//     metadata: {}
+//   },
+//   Event {
+//     tags: [Source(Filesystem), FileEventKind(Access(Open(Any))), Path { path: "/tmp/not-hidden-PrbUj4/.git/refs/tags", file_type: Some(Dir) }],
+//     metadata: {}
+//   },
+//   Event {
+//     tags: [Source(Filesystem), FileEventKind(Access(Open(Any))), Path { path: "/tmp/not-hidden-PrbUj4", file_type: Some(Dir) }],
+//     metadata: {}
+//   },
+//   Event {
+//     tags: [Source(Filesystem), FileEventKind(Access(Open(Any))), Path { path: "/tmp/not-hidden-PrbUj4/src", file_type: Some(Dir) }],
+//     metadata: {}
+//   },
+//   Event {
+//     tags: [Source(Filesystem), FileEventKind(Access(Open(Any))), Path { path: "/tmp/not-hidden-PrbUj4/src", file_type: Some(Dir) }],
+//     metadata: {}
+//   },
+//   Event {
+//     tags: [Source(Filesystem), FileEventKind(Create(Folder)), Path { path: "/tmp/not-hidden-PrbUj4/serve", file_type: Some(Dir) }],
+//     metadata: {}
+//   },
+//   Event {
+//     tags: [Source(Filesystem), FileEventKind(Access(Open(Any))), Path { path: "/tmp/not-hidden-PrbUj4/serve", file_type: Some(Dir) }],
+//     metadata: {}
+//   },
+//   Event {
+//     tags: [Source(Filesystem), FileEventKind(Modify(Metadata(Any))), Path { path: "/tmp/not-hidden-PrbUj4/serve", file_type: Some(Dir) }],
+//     metadata: {}
+//   }
+// ]

@@ -31,7 +31,7 @@ use watchexec_filterer_ignore::IgnoreFilterer;
 
 use crate::{
     build_command::BuildCommand,
-    common::{ForStdoutputLine as _, StateForTesting, TESTING_MODE},
+    common::{ForStdoutputLine as _, StateForTesting},
 };
 
 #[derive(Debug, Clone, clap::Parser)]
@@ -173,7 +173,6 @@ async fn main() {
     }
 
     let build_command = BuildCommand::new(build_command, serve_path.clone());
-    build_command.invoke().await.unwrap();
 
     let wx = Watchexec::new_async(move |action| {
         Box::new({
@@ -265,17 +264,11 @@ async fn main() {
 
     debug!("browser data dir: {browser_data_dir:?}");
 
-    let mut browser_config_builder = BrowserConfig::builder()
+    let browser_config = BrowserConfig::builder()
         .with_head()
         .viewport(None)
         .user_data_dir(browser_data_dir.path())
-        .port(0);
-
-    if std::env::var(common::TESTING_MODE).is_ok() {
-        browser_config_builder = browser_config_builder.launch_timeout(Duration::from_mins(15));
-    }
-
-    let browser_config = browser_config_builder
+        .port(0)
         .build()
         .map_err(|e| anyhow!("failed to build browser config: {e}"))
         .unwrap();
@@ -301,7 +294,7 @@ async fn main() {
 
     debug!("browser pid: {browser_pid}");
 
-    if std::env::var(TESTING_MODE).is_ok() {
+    if std::env::var(StateForTesting::ENV_VAR).is_ok() {
         let state_for_testing = StateForTesting {
             serve_port: serve_address.port(),
             browser_debugging_address,
