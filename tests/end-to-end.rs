@@ -4,11 +4,13 @@ mod common;
 use std::{
     collections::BTreeSet,
     fs::Permissions,
-    io::Write,
+    io::{BufRead as _, Write},
     net::Ipv4Addr,
+    ops::DerefMut,
     os::unix::fs::{PermissionsExt, symlink},
     path::{Path, PathBuf},
     process::{ExitStatus, Stdio},
+    sync::Arc,
     vec::Vec,
 };
 
@@ -27,8 +29,9 @@ use nix::{sys::signal::Signal, unistd::Pid};
 use sysinfo::{ProcessRefreshKind, RefreshKind};
 use tempfile::{NamedTempFile, TempDir, TempPath};
 use tokio::{
-    io::{AsyncBufReadExt as _, AsyncWriteExt as _, BufReader},
-    task::JoinHandle,
+    io::AsyncWriteExt as _,
+    sync::Mutex,
+    task::{JoinHandle, yield_now},
 };
 
 use crate::common::{ForStdoutputLine as _, StateForTesting, TESTING_MODE};
@@ -37,9 +40,12 @@ const SERVE_DIR: &str = env!("SERVE_DIR");
 
 #[derive(Debug)]
 struct Subject {
-    process: tokio::process::Child,
+    process: DroppyChild,
     state_for_testing: StateForTesting,
+    stderr: Arc<Mutex<String>>,
 }
+
+// TODO test that subject does not write to stdout
 
 #[derive(Debug, derive_more::Deref, derive_more::DerefMut)]
 struct DroppyChild(Option<std::process::Child>);
@@ -87,6 +93,20 @@ trait Signalable {
     fn kill_wait(&mut self, signal: Signal) -> impl Future<Output = anyhow::Result<ExitStatus>>;
 }
 
+impl Signalable for DroppyChild {
+    fn signal(&self, signal: Signal) -> anyhow::Result<()> {
+        self.0.as_ref().context("droppy child")?.signal(signal)
+    }
+
+    async fn kill_wait(&mut self, signal: Signal) -> anyhow::Result<ExitStatus> {
+        self.0
+            .as_mut()
+            .context("droppy child")?
+            .kill_wait(signal)
+            .await
+    }
+}
+
 impl Signalable for std::process::Child {
     fn signal(&self, signal: Signal) -> anyhow::Result<()> {
         let pid = Pid::from_raw(self.id().try_into()?);
@@ -97,19 +117,6 @@ impl Signalable for std::process::Child {
     async fn kill_wait(&mut self, signal: Signal) -> anyhow::Result<ExitStatus> {
         self.signal(signal)?;
         let status = self.wait()?;
-        Ok(status)
-    }
-}
-impl Signalable for tokio::process::Child {
-    fn signal(&self, signal: Signal) -> anyhow::Result<()> {
-        let pid = Pid::from_raw(self.id().context("no pid")?.try_into()?);
-        nix::sys::signal::kill(pid, signal)?;
-        Ok(())
-    }
-
-    async fn kill_wait(&mut self, signal: Signal) -> anyhow::Result<ExitStatus> {
-        self.signal(signal)?;
-        let status = self.wait().await?;
         Ok(status)
     }
 }
@@ -212,27 +219,23 @@ impl Subject {
     }
 
     async fn wait_stderr_line_contains(&mut self, pat: &str) -> anyhow::Result<String> {
-        let stderr = self
-            .process
-            .stderr
-            .as_mut()
-            .context("taking subject &mut stderr")?;
-
-        let mut stderr_lines = BufReader::new(stderr).lines();
-
         // TODO instead of reading all lines, use precise log filtering?
 
         let line = loop {
-            let line = stderr_lines
-                .next_line()
-                .await?
-                .context("reading subject stderr line")?;
+            let mut stderr_lock = self.stderr.lock().await;
+            let stderr = std::mem::take(stderr_lock.deref_mut());
+            drop(stderr_lock);
+            let mut stderr_lines = stderr.lines();
 
-            eprintln!("subject stderr: {line}");
-
-            if line.contains(pat) {
+            if let Some(line) = stderr_lines.find_map(|line| {
+                if line.contains(pat) {
+                    Some(line.to_string())
+                } else {
+                    None
+                }
+            }) {
                 break line;
-            }
+            };
         };
 
         Ok(line)
@@ -310,7 +313,7 @@ impl Fixture {
         tokio::fs::write(root.path().join(".gitignore"), format!("/{SERVE_DIR}\n")).await?;
 
         let mut git_init_command =
-            tokio::process::Command::new(Path::new(env!("GIT_BIN_PATH")).join("git"));
+            std::process::Command::new(Path::new(env!("GIT_BIN_PATH")).join("git"));
 
         git_init_command
             .current_dir(&root)
@@ -318,7 +321,6 @@ impl Fixture {
 
         let git_init_exit_status = git_init_command
             .status()
-            .await
             .with_context(|| format!("failed to spawn: {git_init_command:?}"))?;
 
         if !git_init_exit_status.success() {
@@ -377,15 +379,8 @@ impl Fixture {
         tokio::fs::write(self.src_path().join(path), content).await
     }
 
-    async fn spawn_subject_without_logging(&self) -> anyhow::Result<Subject> {
-        self.spawn_subject_with(false).await
-    }
-
+    // TODO spawn_subject and spawn_subject_process fns, where the latter does not have test data
     async fn spawn_subject(&self) -> anyhow::Result<Subject> {
-        self.spawn_subject_with(true).await
-    }
-
-    async fn spawn_subject_with(&self, log_stderr: bool) -> anyhow::Result<Subject> {
         let mut subject_command = self.subject_command();
 
         subject_command
@@ -393,41 +388,44 @@ impl Fixture {
             .stderr(Stdio::piped());
 
         let mut process = subject_command.spawn().context("failed to spawn subject")?;
+        let stderr = Arc::new(Mutex::new(String::new()));
+        let stderr_clone = Arc::clone(&stderr);
 
-        if log_stderr {
-            process
-                .for_stderr_line(|line| {
-                    eprintln!("subject stderr: {line}");
-                })
-                .context("handling subject stderr")?;
-        }
+        process
+            .for_stderr_line(move |line| {
+                eprintln!("subject stderr: {line}");
+                stderr_clone.blocking_lock().push_str(line);
+            })
+            .context("handling subject stderr")?;
 
         let stdout = process
             .stdout
             .as_mut()
             .context("obtaining subject stdout mutable reference")?;
 
-        let mut stdout_lines = BufReader::new(stdout).lines();
+        let mut stdout_lines = std::io::BufReader::new(stdout).lines();
 
-        let line = stdout_lines
-            .next_line()
-            .await?
-            .context("failed to read a single subject stdout line")?;
+        let line = loop {
+            if let Some(line) = stdout_lines.next() {
+                break line?;
+            }
+            yield_now().await;
+        };
 
         let state_for_testing = serde_json::from_str(&line)
             .with_context(|| format!("failed to parse state for testing: {line:?}"))?;
 
         Ok(Subject {
-            process,
+            process: DroppyChild(Some(process)),
             state_for_testing,
+            stderr,
         })
     }
 
-    fn subject_command(&self) -> tokio::process::Command {
-        let mut command = tokio::process::Command::new(env!("CARGO_BIN_EXE_conveyorbelt"));
+    fn subject_command(&self) -> std::process::Command {
+        let mut command = std::process::Command::new(env!("CARGO_BIN_EXE_conveyorbelt"));
 
         command
-            .kill_on_drop(true)
             .current_dir(&self.root)
             .env_clear()
             .env("DISPLAY", Xvfb::DISPLAY)
@@ -802,7 +800,7 @@ async fn sigquit() {
 async fn cannot_find_git_executable() {
     let mut fixture = Fixture::new().await.unwrap();
     fixture.subject_path_env_var.remove(env!("GIT_BIN_PATH"));
-    let output = fixture.subject_command().output().await.unwrap();
+    let output = fixture.subject_command().output().unwrap();
     assert_eq!(output.status.code(), Some(101));
     let stderr = String::from_utf8(output.stderr).unwrap();
     assert!(stderr.contains("failed to run "), "{stderr}");
@@ -816,7 +814,7 @@ async fn cannot_find_browser_executable() {
         .subject_path_env_var
         .remove(env!("CHROMIUM_BIN_PATH"));
 
-    let output = fixture.subject_command().output().await.unwrap();
+    let output = fixture.subject_command().output().unwrap();
     assert_eq!(output.status.code(), Some(101));
     let stderr = String::from_utf8(output.stderr).unwrap();
 
@@ -834,7 +832,7 @@ async fn not_inside_a_git_work_tree() {
         .await
         .unwrap();
 
-    let output = fixture.subject_command().output().await.unwrap();
+    let output = fixture.subject_command().output().unwrap();
     assert_eq!(output.status.code(), Some(101));
     let stderr = String::from_utf8(output.stderr).unwrap();
     assert!(stderr.contains("not a git repository"), "{stderr}");
@@ -844,7 +842,7 @@ async fn not_inside_a_git_work_tree() {
 async fn build_command_not_found() {
     let fixture = Fixture::new().await.unwrap();
     std::fs::remove_file(&*fixture.build_command).unwrap();
-    let output = fixture.subject_command().output().await.unwrap();
+    let output = fixture.subject_command().output().unwrap();
     assert_eq!(output.status.code(), Some(101));
     let stderr = String::from_utf8(output.stderr).unwrap();
     assert!(stderr.contains("No such file or directory"), "{stderr}");
@@ -858,7 +856,7 @@ async fn build_command_not_executable() {
         .await
         .unwrap();
 
-    let output = fixture.subject_command().output().await.unwrap();
+    let output = fixture.subject_command().output().unwrap();
     assert_eq!(output.status.code(), Some(101));
     let stderr = String::from_utf8(output.stderr).unwrap();
     assert!(stderr.contains("Permission denied"), "{stderr}");
@@ -872,7 +870,7 @@ async fn build_command_stderr() {
         .build_command("print -e 'some stderr line'")
         .unwrap();
 
-    let mut subject = fixture.spawn_subject_without_logging().await.unwrap();
+    let mut subject = fixture.spawn_subject().await.unwrap();
 
     subject
         .wait_stderr_line_contains("build command stderr: some stderr line")
@@ -887,7 +885,7 @@ async fn build_command_stderr() {
 async fn build_command_stdout() {
     let mut fixture = Fixture::new().await.unwrap();
     fixture.build_command("print 'some stdout line'").unwrap();
-    let mut subject = fixture.spawn_subject_without_logging().await.unwrap();
+    let mut subject = fixture.spawn_subject().await.unwrap();
 
     subject
         .wait_stderr_line_contains("build command stdout: some stdout line")
@@ -902,7 +900,7 @@ async fn build_command_stdout() {
 async fn build_command_failure_followed_by_success() {
     let mut fixture = Fixture::new().await.unwrap();
     fixture.build_command("exit 1").unwrap();
-    let mut subject = fixture.spawn_subject_without_logging().await.unwrap();
+    let mut subject = fixture.spawn_subject().await.unwrap();
 
     subject
         .wait_stderr_line_contains("exited with exit status: 1")
@@ -954,7 +952,6 @@ async fn serve_path_not_git_ignored() {
         .subject_command()
         .stderr(Stdio::piped())
         .output()
-        .await
         .unwrap();
 
     let expected_line = format!(
@@ -987,7 +984,7 @@ async fn build_command_not_executed_on_git_ignored_file_creation() {
 
     drop(gitignore);
 
-    let mut subject = fixture.spawn_subject_without_logging().await.unwrap();
+    let mut subject = fixture.spawn_subject().await.unwrap();
 
     subject
         .wait_stderr_line_contains("build command succeeded")

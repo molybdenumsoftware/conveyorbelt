@@ -13,12 +13,12 @@ pub struct StateForTesting {
 pub const TESTING_MODE: &str = "_TESTING_MODE";
 
 pub trait ForStdoutputLine {
-    fn for_stderr_line(&mut self, f: fn(line: &str)) -> Option<()>;
+    fn for_stderr_line(&mut self, f: impl Fn(&str) + Send + 'static) -> Option<()>;
     fn for_stdout_line(&mut self, f: fn(line: &str)) -> Option<()>;
 }
 
 impl ForStdoutputLine for std::process::Child {
-    fn for_stderr_line(&mut self, f: fn(line: &str)) -> Option<()> {
+    fn for_stderr_line(&mut self, f: impl Fn(&str) + Send + 'static) -> Option<()> {
         let child_stderr = self.stderr.take()?;
         let mut child_stderr_lines = std::io::BufReader::new(child_stderr).lines();
 
@@ -50,7 +50,7 @@ impl ForStdoutputLine for std::process::Child {
 }
 
 impl ForStdoutputLine for tokio::process::Child {
-    fn for_stderr_line(&mut self, f: fn(&str)) -> Option<()> {
+    fn for_stderr_line(&mut self, f: impl Fn(&str) + Send + 'static) -> Option<()> {
         let child_stderr = self.stderr.take()?;
         let mut stderr_lines = tokio::io::BufReader::new(child_stderr).lines();
 
