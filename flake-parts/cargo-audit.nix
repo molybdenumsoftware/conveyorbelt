@@ -12,8 +12,9 @@
   };
 
   perSystem =
-    { craneLib, ... }:
+    { craneLib, pkgs, ... }:
     {
+      make-shells.default.packages = [ pkgs.cargo-audit ];
       checks.audit-deps = craneLib.cargoAudit {
         inherit (inputs) advisory-db;
 
