@@ -25,16 +25,19 @@
               $ ${config.metadata.title} <build command>
               ```
 
-              A *serve path* will be resolved to `<git top-level>/${psArgs.config.buildEnv.SERVE_DIR}`
+              A temporary directory *serve path* is created
               and its contents statically served at `http://localhost:<available port>/`.
-              `chromium` will be launched with that URL.
+              A chromium browser is launched with that URL.
 
-              Non git-ignored files will be watched.
-              On change, the `<build command>` will be invoked with *serve path* provided via the environment as `SERVE_PATH`.
+              On file changes the `<build command>` is invoked
+              with the *serve path* provided as the environment variable `${psArgs.config.buildEnv.SERVE_PATH}`.
               When `<build command>` exits successfully, the page reloads.
             ''
             |> pkgs.writeText "README.md";
         }
       ];
     };
+
+  # TODO document difference between this design and watching the serve path
+  # TODO document different between this design and JS injection for reloading
 }

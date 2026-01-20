@@ -4,7 +4,7 @@ use anyhow::Context as _;
 use tokio::process::Command;
 use tracing::info;
 
-use crate::common::ForStdoutputLine as _;
+use crate::common::{ForStdoutputLine as _, SERVE_PATH};
 
 #[derive(Debug, Clone)]
 pub struct BuildCommand {
@@ -21,7 +21,7 @@ impl BuildCommand {
         let mut build_command = Command::new(&self.path);
 
         build_command
-            .env("SERVE_PATH", &self.serve_path)
+            .env(SERVE_PATH, &self.serve_path)
             .kill_on_drop(true)
             .stderr(Stdio::piped())
             .stdout(Stdio::piped());

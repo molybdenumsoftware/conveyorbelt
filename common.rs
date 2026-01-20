@@ -1,10 +1,13 @@
-use std::io::BufRead as _;
+use std::{io::BufRead as _, path::PathBuf};
 
 use serde::{Deserialize, Serialize};
 use tokio::io::AsyncBufReadExt as _;
 
+pub const SERVE_PATH: &str = env!("SERVE_PATH");
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct StateForTesting {
+    pub serve_path: PathBuf,
     pub serve_port: u16,
     pub browser_debugging_address: String,
     pub browser_pid: u32,

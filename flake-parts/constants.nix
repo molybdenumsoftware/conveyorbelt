@@ -1,5 +1,5 @@
 {
   perSystem.buildEnv = {
-    SERVE_DIR = "serve";
+    SERVE_PATH = "SERVE_PATH";
   };
 }

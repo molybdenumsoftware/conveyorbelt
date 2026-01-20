@@ -7,7 +7,6 @@ use std::{
     mem,
     net::{IpAddr, Ipv4Addr, SocketAddr, TcpListener},
     path::PathBuf,
-    process::Stdio,
     sync::Arc,
     time::Duration,
 };
@@ -22,16 +21,16 @@ use static_web_server::{
     service::RouterService,
     signals,
 };
-use tempfile::tempdir;
+use tempfile::{TempDir, tempdir};
 use tokio::process::Command;
-use tracing::{debug, info, level_filters::LevelFilter, warn};
+use tracing::{debug, info, level_filters::LevelFilter};
 use watchexec::Watchexec;
 use watchexec_events::filekind::FileEventKind;
 use watchexec_filterer_ignore::IgnoreFilterer;
 
 use crate::{
     build_command::BuildCommand,
-    common::{ForStdoutputLine as _, StateForTesting, TESTING_MODE},
+    common::{StateForTesting, TESTING_MODE},
 };
 
 #[derive(Debug, Clone, clap::Parser)]
@@ -64,6 +63,7 @@ impl watchexec::filter::Filterer for EventFilter {
                 err,
             })?
             .join(".git");
+
         if let Some(path) = event.tags.iter().find_map(|tag| {
             if let watchexec_events::Tag::Path { path, .. } = tag {
                 Some(path)
@@ -136,43 +136,16 @@ async fn main() {
 
     let git_toplevel = git_toplevel.trim_end().to_string();
     debug!("git toplevel obtained: {git_toplevel}");
-    let mut serve_path: PathBuf = git_toplevel.into();
-    serve_path.push(env!("SERVE_DIR"));
-    debug!("serve path resolved: {serve_path:?}");
 
-    let mut command = Command::new("git");
+    let serve_path = TempDir::with_prefix(
+        // https://github.com/static-web-server/static-web-server/pull/606
+        "not-hidden-",
+    )
+    .unwrap();
 
-    command
-        .stdout(Stdio::null())
-        .stderr(Stdio::piped())
-        .arg("check-ignore")
-        .arg(&serve_path);
+    debug!("serve path: {serve_path:?}");
 
-    let mut process = command
-        .spawn()
-        .with_context(|| format!("failed to run {command:?}"))
-        .unwrap();
-
-    process
-        .for_stderr_line(|line| {
-            warn!("`git check-ignore` stderr: {line}");
-        })
-        .unwrap();
-
-    let exit_status = process
-        .wait()
-        .await
-        .with_context(|| format!("waiting for `{command:?}` to complete"))
-        .unwrap();
-
-    if !exit_status.success() {
-        panic!(
-            "serve path (`{}`) is not git ignored",
-            serve_path.to_str().unwrap()
-        );
-    }
-
-    let build_command = BuildCommand::new(build_command, serve_path.clone());
+    let build_command = BuildCommand::new(build_command, serve_path.path().to_path_buf());
     build_command.invoke().await.unwrap();
 
     let wx = Watchexec::new_async(move |action| {
@@ -208,13 +181,13 @@ async fn main() {
     info!("serving address: {serve_address}");
 
     let handler_opts = RequestHandlerOpts {
-        root_dir: serve_path.clone(),
+        root_dir: serve_path.path().to_path_buf(),
         compression: false,
         compression_static: false,
         cors: None,
         security_headers: false,
         cache_control_headers: false,
-        page404: serve_path.join("404.html"),
+        page404: serve_path.path().join("404.html"),
         page50x: PathBuf::new(),
         index_files: ["index.html"].iter().map(|s| s.to_string()).collect(),
         log_remote_address: false,
@@ -306,6 +279,7 @@ async fn main() {
             serve_port: serve_address.port(),
             browser_debugging_address,
             browser_pid,
+            serve_path: serve_path.path().to_path_buf(),
         };
 
         debug!("{state_for_testing:?}");
