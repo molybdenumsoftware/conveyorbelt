@@ -936,15 +936,29 @@ async fn build_command_stdout() {
 #[tokio::test]
 async fn build_command_failure_followed_by_success() {
     let mut fixture = Fixture::new().await.unwrap();
-    fixture.build_command("exit 1").unwrap();
+
+    fixture
+        .build_command(&formatdoc! {
+            r#" if ("{}/foo" | path exists) {{ exit 0 }} else {{ exit 1 }} "#,
+            fixture.src_path().to_str().unwrap()
+        })
+        .unwrap();
+
     let mut subject = fixture.spawn_subject().await.unwrap();
 
     subject
-        .wait_stderr_line_contains("exited with exit status: 1")
+        .wait_stderr_line_contains("build command exit status: 1")
         .await
         .unwrap();
 
-    // TODO success part
+    fixture.write_source_file("foo", "no matter").await.unwrap();
+
+    subject
+        .wait_stderr_line_contains("build command succeeded")
+        .await
+        .unwrap();
+
+    assert_eq!(fixture.build_command_invocation_count().await.unwrap(), 2);
 }
 
 #[tokio::test]

@@ -75,6 +75,8 @@ impl watchexec::filter::Filterer for EventFilter {
             return Ok(false);
         };
 
+        dbg!(event);
+
         if let Some(kind) = event.tags.iter().find_map(|tag| {
             if let watchexec_events::Tag::FileEventKind(kind) = tag {
                 Some(kind)
@@ -154,6 +156,7 @@ async fn main() {
 
             async move {
                 info!("change detected: {:?}", action.events);
+                // TODO should not do expensive work here
                 build_command_clone.invoke().await.unwrap();
                 action
             }

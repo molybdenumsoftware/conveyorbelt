@@ -52,7 +52,7 @@ impl BuildCommand {
         if build_process_exit_status.success() {
             info!("build command succeeded");
         } else {
-            info!("build command {build_command:?} exited with {build_process_exit_status}");
+            info!("build command {build_process_exit_status}, {build_command:?}");
         };
 
         Ok(())
