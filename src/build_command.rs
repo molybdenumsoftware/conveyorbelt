@@ -1,4 +1,8 @@
-use std::{path::PathBuf, process::{Command, Stdio}, sync::{Arc, Mutex}};
+use std::{
+    path::PathBuf,
+    process::{Command, Stdio},
+    sync::{Arc, Mutex},
+};
 
 use anyhow::Context as _;
 use tracing::info;
@@ -21,7 +25,11 @@ pub struct BuildCommand {
 
 impl BuildCommand {
     pub fn new(path: PathBuf, serve_path: PathBuf) -> Self {
-        Self { path, serve_path, sync_state: Arc::new(Mutex::new(SyncState::NotRunning)),  }
+        Self {
+            path,
+            serve_path,
+            sync_state: Arc::new(Mutex::new(SyncState::NotRunning)),
+        }
     }
 
     fn invoke_and_wait(&self) -> anyhow::Result<()> {
@@ -34,8 +42,7 @@ impl BuildCommand {
 
         let build_process = build_command
             .spawn()
-            .with_context(|| format!("failed to spawn build command {build_command:?}"))
-            ?;
+            .with_context(|| format!("failed to spawn build command {build_command:?}"))?;
 
         info!("build command spawned");
 
@@ -55,8 +62,7 @@ impl BuildCommand {
 
         let build_process_exit_status = build_process
             .wait()
-            .context("failed to obtain build process exit status")
-            ?;
+            .context("failed to obtain build process exit status")?;
 
         if build_process_exit_status.success() {
             info!("build command succeeded");
@@ -85,20 +91,20 @@ impl BuildCommand {
                         SyncState::Running => {
                             *mutex_guard = SyncState::NotRunning;
                             drop(mutex_guard);
-                        },
+                        }
                         SyncState::RunningAndQueued => {
                             drop(mutex_guard);
                             clone.invoke_or_queue();
-                        },
-                    } 
-                },
+                        }
+                    }
+                }
                 SyncState::Running => {
                     (*mutex_guard) = SyncState::RunningAndQueued;
                     drop(mutex_guard);
-                },
+                }
                 SyncState::RunningAndQueued => {
                     drop(mutex_guard);
-                },
+                }
             }
         });
     }

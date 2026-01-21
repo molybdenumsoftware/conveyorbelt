@@ -1,4 +1,4 @@
-use std::{io::BufRead as _, path::PathBuf, process::ExitStatus};
+use std::{io::BufRead as _, path::PathBuf};
 
 use nix::{sys::signal::Signal, unistd::Pid};
 use serde::{Deserialize, Serialize};
@@ -127,7 +127,6 @@ impl Drop for DroppyChild {
 
 pub trait Signalable {
     fn signal(&self, signal: Signal) -> anyhow::Result<()>;
-    fn kill_wait(&mut self, signal: Signal) -> anyhow::Result<ExitStatus>;
 }
 
 impl Signalable for std::process::Child {
@@ -135,11 +134,5 @@ impl Signalable for std::process::Child {
         let pid = Pid::from_raw(self.id().try_into()?);
         nix::sys::signal::kill(pid, signal)?;
         Ok(())
-    }
-
-    fn kill_wait(&mut self, signal: Signal) -> anyhow::Result<ExitStatus> {
-        self.signal(signal)?;
-        let status = self.wait()?;
-        Ok(status)
     }
 }

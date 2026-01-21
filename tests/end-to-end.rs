@@ -2,7 +2,15 @@
 mod common;
 
 use std::{
-    collections::BTreeSet, fs::Permissions, io::{BufRead as _, Write}, net::Ipv4Addr, os::unix::fs::{PermissionsExt, symlink}, path::{Path, PathBuf}, process::Stdio, sync::{Arc, Mutex}, vec::Vec
+    collections::BTreeSet,
+    fs::Permissions,
+    io::{BufRead as _, Write},
+    net::Ipv4Addr,
+    os::unix::fs::{PermissionsExt, symlink},
+    path::{Path, PathBuf},
+    process::{ExitStatus, Stdio},
+    sync::{Arc, Mutex},
+    vec::Vec,
 };
 
 use anyhow::{Context, anyhow, bail};
@@ -21,7 +29,21 @@ use sysinfo::{ProcessRefreshKind, RefreshKind};
 use tempfile::{NamedTempFile, TempDir, TempPath};
 use tokio::task::JoinHandle;
 
-use crate::common::{DroppyChild, ForStdoutputLine as _, SERVE_PATH, Signalable as _, StateForTesting, TESTING_MODE};
+use crate::common::{
+    DroppyChild, ForStdoutputLine as _, SERVE_PATH, Signalable as _, StateForTesting, TESTING_MODE,
+};
+
+pub trait KillWait {
+    fn kill_wait(&mut self, signal: Signal) -> anyhow::Result<ExitStatus>;
+}
+
+impl KillWait for std::process::Child {
+    fn kill_wait(&mut self, signal: Signal) -> anyhow::Result<ExitStatus> {
+        self.signal(signal)?;
+        let status = self.wait()?;
+        Ok(status)
+    }
+}
 
 #[derive(Debug)]
 struct Subject {
