@@ -4,8 +4,7 @@ use std::{
     sync::{Arc, Mutex},
 };
 
-use anyhow::Context as _;
-use tracing::info;
+use tracing::{info, warn};
 
 use crate::common::{DroppyChild, ForStdoutputLine as _, SERVE_PATH};
 
@@ -32,7 +31,7 @@ impl BuildCommand {
         }
     }
 
-    fn invoke_and_wait(&self) -> anyhow::Result<()> {
+    fn invoke_and_wait(&self) {
         let mut build_command = Command::new(&self.path);
 
         build_command
@@ -40,12 +39,15 @@ impl BuildCommand {
             .stderr(Stdio::piped())
             .stdout(Stdio::piped());
 
-        let build_process = build_command
-            .spawn()
-            .with_context(|| format!("failed to spawn build command {build_command:?}"))?;
+        let build_process = match build_command.spawn() {
+            Ok(child) => child,
+            Err(e) => {
+                warn!("{e}: build command failed to spawn: {build_command:?}");
+                return;
+            }
+        };
 
         info!("build command spawned");
-
         let mut build_process = DroppyChild::new(build_process);
 
         build_process
@@ -60,17 +62,19 @@ impl BuildCommand {
             })
             .unwrap();
 
-        let build_process_exit_status = build_process
-            .wait()
-            .context("failed to obtain build process exit status")?;
+        let build_process_exit_status = match build_process.wait() {
+            Ok(status) => status,
+            Err(e) => {
+                warn!("{e}: failed to obtain build process exit status");
+                return;
+            }
+        };
 
         if build_process_exit_status.success() {
             info!("build command succeeded");
         } else {
             info!("build command {build_process_exit_status}, {build_command:?}");
         };
-
-        Ok(())
     }
 
     pub fn invoke_or_queue(&self) {
@@ -83,7 +87,7 @@ impl BuildCommand {
                 SyncState::NotRunning => {
                     (*mutex_guard) = SyncState::Running;
                     drop(mutex_guard);
-                    clone.invoke_and_wait().unwrap();
+                    clone.invoke_and_wait();
                     let mut mutex_guard = clone.sync_state.lock().unwrap();
 
                     match *mutex_guard {

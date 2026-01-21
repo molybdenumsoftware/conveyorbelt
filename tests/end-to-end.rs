@@ -10,6 +10,7 @@ use std::{
     path::{Path, PathBuf},
     process::{ExitStatus, Stdio},
     sync::{Arc, Mutex},
+    time::Duration,
     vec::Vec,
 };
 
@@ -831,11 +832,34 @@ fn build_command_not_executable() {
     let mut subject = fixture.spawn_subject().unwrap();
 
     subject
-        .wait_stderr_line_contains("Permission denied")
+        .wait_stderr_line_contains("build command failed to spawn")
+        .unwrap();
+}
+#[test]
+fn build_command_not_executable_and_later_is() {
+    let fixture = Fixture::init().unwrap();
+    std::fs::set_permissions(&*fixture.build_command, Permissions::from_mode(0o644)).unwrap();
+    let mut subject = fixture.spawn_subject().unwrap();
+
+    subject
+        .wait_stderr_line_contains("build command failed to spawn")
         .unwrap();
 
-    let status = subject.process.wait().unwrap();
-    assert_eq!(status.code(), Some(101));
+    std::fs::set_permissions(&*fixture.build_command, Permissions::from_mode(0o755)).unwrap();
+
+    subject
+        .wait_stderr_line_contains("obtaining pathset")
+        .unwrap();
+
+    // TODO resolve race
+    dbg!("sleeping");
+    std::thread::sleep(Duration::from_secs(1));
+
+    fixture.write_source_file("trigger", "").unwrap();
+
+    subject
+        .wait_stderr_line_contains("build command succeeded")
+        .unwrap();
 }
 
 #[test]
@@ -999,6 +1023,7 @@ async fn browser_reloads_following_build_command_execution() {
 // TODO test that subject does not write to stdout
 // TODO method for signalling Subject
 // TODO test for logging of detected changes
+// TODO tests return Result?
 
 #[test]
 fn no_extraneous_build_command_invocations() {

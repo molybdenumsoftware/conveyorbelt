@@ -3,7 +3,7 @@ use std::{path::PathBuf, time::Duration};
 use ignore_files::IgnoreFilter;
 use tracing::info;
 use watchexec::Watchexec;
-use watchexec_events::filekind::FileEventKind;
+use watchexec_events::{Source, Tag, filekind::FileEventKind};
 use watchexec_filterer_ignore::IgnoreFilterer;
 
 use crate::build_command::BuildCommand;
@@ -24,7 +24,11 @@ impl FileWatcher {
 
     pub async fn init(self) -> anyhow::Result<()> {
         let wx = Watchexec::new(move |action| {
-            info!("change detected: {:?}", action.events);
+            if action.events.iter().any(|event| event.tags.iter().any(|tag| !matches!(tag, Tag::Source(Source::Filesystem)))) {
+                return action
+            }
+            // TODO use this Handler job API?
+            info!("file change detected: {:?}", action.events);
             self.build_command.invoke_or_queue();
             action
         })?;
@@ -64,7 +68,7 @@ impl watchexec::filter::Filterer for EventFilter {
         let dot_git = self.path.join(".git");
 
         if let Some(path) = event.tags.iter().find_map(|tag| {
-            if let watchexec_events::Tag::Path { path, .. } = tag {
+            if let Tag::Path { path, .. } = tag {
                 Some(path)
             } else {
                 None
@@ -74,18 +78,19 @@ impl watchexec::filter::Filterer for EventFilter {
             return Ok(false);
         };
 
-        if let Some(kind) = event.tags.iter().find_map(|tag| {
-            if let watchexec_events::Tag::FileEventKind(kind) = tag {
+        let kind = event.tags.iter().find_map(|tag| {
+            if let Tag::FileEventKind(kind) = tag {
                 Some(kind)
             } else {
                 None
             }
-        }) {
-            let (FileEventKind::Create(_) | FileEventKind::Modify(_) | FileEventKind::Remove(_)) =
-                kind
-            else {
-                return Ok(false);
-            };
+        });
+
+        if !matches!(
+            kind,
+            Some(FileEventKind::Create(_) | FileEventKind::Modify(_) | FileEventKind::Remove(_))
+        ) {
+            return Ok(false);
         }
 
         self.ignore_filterer.check_event(event, priority)
