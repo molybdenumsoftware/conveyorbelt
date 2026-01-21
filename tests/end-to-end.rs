@@ -1032,6 +1032,12 @@ async fn build_command_not_executed_on_git_ignored_file_creation() {
         .await
         .unwrap();
 
+    // TODO I saw a failure here, must be race
+    // ```
+    //  > assertion `left == right` failed
+    // >   left: 3
+    // >  right: 2
+    // ```
     assert_eq!(fixture.build_command_invocation_count().await.unwrap(), 2);
 }
 

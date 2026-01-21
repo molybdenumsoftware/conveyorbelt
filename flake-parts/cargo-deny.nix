@@ -25,6 +25,8 @@
           drv = pkgs.writers.writeTOML "deny.toml" {
             licenses.allow = [
               "Apache-2.0"
+              "CC0-1.0"
+              "ISC"
               "MIT"
               "Unicode-3.0"
               "Zlib"
@@ -32,6 +34,9 @@
           };
         }
       ];
+
+      treefmt.settings.global.excludes = [ path_ ];
+
       checks.cargo-deny = craneLib.cargoDeny {
         src =
           [
