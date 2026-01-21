@@ -17,6 +17,11 @@ default-features = false
 features = ["derive"]
 version = "*"
 
+[dependencies.derive_more]
+default-features = false
+features = ["deref", "deref_mut"]
+version = "*"
+
 [dependencies.hyper]
 default-features = false
 features = ["http1", "server"]
@@ -24,6 +29,11 @@ version = "0"
 
 [dependencies.ignore-files]
 default-features = false
+version = "*"
+
+[dependencies.nix]
+default-features = false
+features = ["signal"]
 version = "*"
 
 [dependencies.serde]
@@ -68,11 +78,6 @@ version = "*"
 default-features = false
 version = "*"
 
-[dev-dependencies.derive_more]
-default-features = false
-features = ["deref", "deref_mut"]
-version = "*"
-
 [dev-dependencies.futures]
 default-features = false
 version = "*"
@@ -83,11 +88,6 @@ version = "*"
 
 [dev-dependencies.maud]
 default-features = false
-version = "*"
-
-[dev-dependencies.nix]
-default-features = false
-features = ["signal"]
 version = "*"
 
 [dev-dependencies.static_init]

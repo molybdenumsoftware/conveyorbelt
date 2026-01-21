@@ -1,15 +1,15 @@
-use std::{path::PathBuf, process::Stdio};
+use std::{path::PathBuf, process::{Command, Stdio}};
 
 use anyhow::Context as _;
-use tokio::process::Command;
 use tracing::info;
 
-use crate::common::{ForStdoutputLine as _, SERVE_PATH};
+use crate::common::{DroppyChild, ForStdoutputLine as _, SERVE_PATH};
 
-#[derive(Debug, Clone)]
+#[derive(Debug)]
 pub struct BuildCommand {
     path: PathBuf,
     serve_path: PathBuf,
+    is_running:
 }
 
 impl BuildCommand {
@@ -17,19 +17,20 @@ impl BuildCommand {
         Self { path, serve_path }
     }
 
-    pub async fn invoke(&self) -> anyhow::Result<()> {
+    fn invoke(&self) -> anyhow::Result<()> {
         let mut build_command = Command::new(&self.path);
 
         build_command
             .env(SERVE_PATH, &self.serve_path)
-            .kill_on_drop(true)
             .stderr(Stdio::piped())
             .stdout(Stdio::piped());
 
-        let mut build_process = build_command
+        let build_process = build_command
             .spawn()
             .with_context(|| format!("failed to spawn build command {build_command:?}"))
-            .unwrap();
+            ?;
+
+        let mut build_process = DroppyChild::new(build_process);
 
         build_process
             .for_stdout_line(|line| {
@@ -45,9 +46,8 @@ impl BuildCommand {
 
         let build_process_exit_status = build_process
             .wait()
-            .await
             .context("failed to obtain build process exit status")
-            .unwrap();
+            ?;
 
         if build_process_exit_status.success() {
             info!("build command succeeded");
@@ -56,5 +56,11 @@ impl BuildCommand {
         };
 
         Ok(())
+    }
+
+    pub fn queue_invocation(&mut self) {
+        std::thread::spawn(move || {
+            info!("build command invocation queued");
+        });
     }
 }

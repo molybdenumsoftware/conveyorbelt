@@ -26,6 +26,10 @@ in
       |> lib.mergeAttrs {
         chromiumoxide.features = [ "tokio-runtime" ];
         clap.features = [ "derive" ];
+        derive_more.features = [
+          "deref"
+          "deref_mut"
+        ];
         hyper = {
           features = [
             "http1"
@@ -33,6 +37,7 @@ in
           ];
           version = "0";
         };
+        nix.features = [ "signal" ];
         tokio.features = [
           "io-util"
           "process"
@@ -54,11 +59,6 @@ in
       ] (_: { })
       |> lib.mergeAttrs {
         sysinfo.features = [ "system" ];
-        derive_more.features = [
-          "deref"
-          "deref_mut"
-        ];
-        nix.features = [ "signal" ];
       }
       |> applyDefaults;
   };

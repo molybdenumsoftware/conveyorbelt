@@ -44,7 +44,7 @@ async fn main() {
     debug!("serve path: {serve_dir:?}");
     let build_command = BuildCommand::new(args.build_command, serve_dir.path().to_path_buf());
     build_command.invoke().await.unwrap();
-    let file_watcher = FileWatcher::new(build_command.clone(), git_toplevel).unwrap();
+    let file_watcher = FileWatcher::new(build_command, git_toplevel).unwrap();
     file_watcher.init().await.unwrap();
     let server = Server::init(serve_dir.path().to_path_buf()).await.unwrap();
     let mut browser = Browser::init().await.unwrap();

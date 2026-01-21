@@ -1,6 +1,7 @@
-use std::{io::BufRead as _, path::PathBuf};
+use std::{io::BufRead as _, path::PathBuf, process::ExitStatus};
 
 use anyhow::Context as _;
+use nix::{sys::signal::Signal, unistd::Pid};
 use serde::{Deserialize, Serialize};
 use tokio::io::AsyncBufReadExt as _;
 use tracing::debug;
@@ -108,5 +109,74 @@ impl ForStdoutputLine for tokio::process::Child {
         });
 
         Some(())
+    }
+}
+
+#[derive(Debug)]
+pub struct DroppyChild(Option<std::process::Child>);
+
+impl DroppyChild {
+    pub fn new(child: std::process::Child) -> Self {
+        Self(Some(child))
+    }
+}
+
+impl std::ops::Deref for DroppyChild {
+    type Target = std::process::Child;
+
+    fn deref(&self) -> &Self::Target {
+        self.0.as_ref().unwrap()
+    }
+}
+
+impl std::ops::DerefMut for DroppyChild {
+    fn deref_mut(&mut self) -> &mut Self::Target {
+        self.0.as_mut().unwrap()
+    }
+}
+
+impl Drop for DroppyChild {
+    fn drop(&mut self) {
+        let Some(mut inner) = self.0.take() else {
+            return;
+        };
+        if let Err(e) = inner.signal(Signal::SIGTERM) {
+            eprintln!("Failed to signal dropped child: {e}");
+            return;
+        }
+        let Ok(status) = inner.wait() else { return };
+        if status.success() {
+            return;
+        }
+        eprintln!("Dropped child terminated with {status}")
+    }
+}
+
+trait Signalable {
+    fn signal(&self, signal: Signal) -> anyhow::Result<()>;
+    fn kill_wait(&mut self, signal: Signal) -> anyhow::Result<ExitStatus>;
+}
+
+impl Signalable for DroppyChild {
+    fn signal(&self, signal: Signal) -> anyhow::Result<()> {
+        self.0.as_ref().context("droppy child")?.signal(signal)
+    }
+
+    fn kill_wait(&mut self, signal: Signal) -> anyhow::Result<ExitStatus> {
+        self.0.as_mut().context("droppy child")?.kill_wait(signal)
+    }
+}
+
+impl Signalable for std::process::Child {
+    fn signal(&self, signal: Signal) -> anyhow::Result<()> {
+        let pid = Pid::from_raw(self.id().try_into()?);
+        nix::sys::signal::kill(pid, signal)?;
+        Ok(())
+    }
+
+    fn kill_wait(&mut self, signal: Signal) -> anyhow::Result<ExitStatus> {
+        self.signal(signal)?;
+        let status = self.wait()?;
+        Ok(status)
     }
 }

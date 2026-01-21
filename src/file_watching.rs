@@ -23,19 +23,11 @@ impl FileWatcher {
     }
 
     pub async fn init(self) -> anyhow::Result<()> {
-        let wx = Watchexec::new_async(move |action| {
-            Box::new({
-                let build_command_clone = self.build_command.clone();
-
-                async move {
-                    info!("change detected: {:?}", action.events);
-
-                    // TODO should not do expensive work here
-                    build_command_clone.invoke().await.unwrap();
-                    action
-                }
-            })
-        })?;
+        let wx = Watchexec::new(move |action| {
+                info!("change detected: {:?}", action.events);
+                self.build_command.invoke();
+                action
+            })?;
 
         wx.config.throttle(Duration::ZERO);
         wx.config.pathset([self.path.as_path()]);
