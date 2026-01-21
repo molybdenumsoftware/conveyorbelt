@@ -1039,7 +1039,6 @@ async fn browser_reloads_following_build_command_execution() {
 // TODO test for logging of detected changes
 
 #[test]
-#[ignore = "TODO"]
 fn no_extraneous_build_command_invocations() {
     let fixture = Fixture::init().unwrap();
     let mut subject = fixture.spawn_subject().unwrap();
