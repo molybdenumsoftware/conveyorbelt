@@ -1,301 +1,75 @@
+mod browser;
 mod build_command;
+mod cli;
 #[path = "../common.rs"]
 mod common;
+mod file_watching;
+mod logging;
+mod project_path;
+mod server;
 
-use std::{
-    env::current_dir,
-    mem,
-    net::{IpAddr, Ipv4Addr, SocketAddr, TcpListener},
-    path::PathBuf,
-    sync::Arc,
-    time::Duration,
-};
+use std::env::current_dir;
 
-use anyhow::{Context, anyhow};
-use chromiumoxide::{Browser, BrowserConfig};
-use clap::Parser as _;
-use hyper::StatusCode;
-use ignore_files::IgnoreFilter;
-use static_web_server::{
-    handler::{RequestHandler, RequestHandlerOpts},
-    service::RouterService,
-    signals,
-};
-use tempfile::{TempDir, tempdir};
-use tokio::process::Command;
-use tracing::{debug, info, level_filters::LevelFilter};
-use watchexec::Watchexec;
-use watchexec_events::filekind::FileEventKind;
-use watchexec_filterer_ignore::IgnoreFilterer;
+use anyhow::Context;
+use static_web_server::signals;
+use tempfile::TempDir;
+use tracing::{debug, info};
 
 use crate::{
+    browser::Browser,
     build_command::BuildCommand,
     common::{StateForTesting, TESTING_MODE},
+    file_watching::FileWatcher,
+    server::Server,
 };
-
-#[derive(Debug, Clone, clap::Parser)]
-struct Cli {
-    /// The build command
-    build_command: PathBuf,
-}
-
-#[derive(Debug)]
-struct EventFilter(IgnoreFilterer);
-
-impl EventFilter {
-    async fn new() -> anyhow::Result<Self> {
-        let mut ignore_filter = IgnoreFilter::new(current_dir()?, &[]).await?;
-        ignore_filter.finish();
-        Ok(Self(IgnoreFilterer(ignore_filter)))
-    }
-}
-
-impl watchexec::filter::Filterer for EventFilter {
-    fn check_event(
-        &self,
-        event: &watchexec_events::Event,
-        priority: watchexec_events::Priority,
-    ) -> Result<bool, watchexec::error::RuntimeError> {
-        let dot_git = current_dir()
-            // TODO static to avoid this conversion
-            .map_err(|err| watchexec::error::RuntimeError::IoError {
-                about: "current dir",
-                err,
-            })?
-            .join(".git");
-
-        if let Some(path) = event.tags.iter().find_map(|tag| {
-            if let watchexec_events::Tag::Path { path, .. } = tag {
-                Some(path)
-            } else {
-                None
-            }
-        }) && path.starts_with(dot_git)
-        {
-            return Ok(false);
-        };
-
-        dbg!(event);
-
-        if let Some(kind) = event.tags.iter().find_map(|tag| {
-            if let watchexec_events::Tag::FileEventKind(kind) = tag {
-                Some(kind)
-            } else {
-                None
-            }
-        }) {
-            let (FileEventKind::Create(_) | FileEventKind::Modify(_) | FileEventKind::Remove(_)) =
-                kind
-            else {
-                return Ok(false);
-            };
-        }
-
-        self.0.check_event(event, priority)
-    }
-}
 
 #[tokio::main]
 async fn main() {
-    let filter = tracing_subscriber::filter::EnvFilter::builder()
-        .with_default_directive(LevelFilter::INFO.into())
-        .with_env_var(env!("LOG_FILTER_VAR_NAME"))
-        .from_env_lossy();
-
-    tracing_subscriber::fmt()
-        .with_writer(std::io::stderr)
-        .with_env_filter(filter)
-        .init();
-
+    logging::init();
     info!("{} starting", env!("CARGO_PKG_NAME"));
-    let cli = Cli::parse();
-    debug!("arguments parsed: {cli:?}");
-    let Cli { build_command } = cli;
-
-    let mut command = Command::new("git");
-    command.args(["rev-parse", "--show-toplevel"]);
-
-    let output = command
-        .output()
-        .await
-        .with_context(|| format!("failed to run {command:?}"))
-        .unwrap();
-
-    if !output.status.success() {
-        panic!(
-            "command {:?} exited with {}. stderr: {}",
-            command,
-            output.status,
-            String::from_utf8_lossy(&output.stderr)
-        );
-    }
-
-    let git_toplevel: String = output
-        .stdout
-        .try_into()
-        .with_context(|| format!("command printed non-UTF-8: {command:?}"))
-        .unwrap();
-
-    let git_toplevel = git_toplevel.trim_end().to_string();
-    debug!("git toplevel obtained: {git_toplevel}");
-
-    let serve_path = TempDir::with_prefix(
-        // https://github.com/static-web-server/static-web-server/pull/606
-        "not-hidden-",
-    )
-    .unwrap();
-
-    debug!("serve path: {serve_path:?}");
-
-    let build_command = BuildCommand::new(build_command, serve_path.path().to_path_buf());
-    build_command.invoke().await.unwrap();
-
-    let wx = Watchexec::new_async(move |action| {
-        Box::new({
-            let build_command_clone = build_command.clone();
-
-            async move {
-                info!("change detected: {:?}", action.events);
-                // TODO should not do expensive work here
-                build_command_clone.invoke().await.unwrap();
-                action
-            }
-        })
-    })
-    .unwrap();
-
-    wx.config.throttle(Duration::ZERO);
-    wx.config.pathset([current_dir().unwrap()]);
-    wx.config.filterer(EventFilter::new().await.unwrap());
-
-    wx.main();
-
-    let address = SocketAddr::from((IpAddr::V4(Ipv4Addr::LOCALHOST), 0));
-
-    let listener = TcpListener::bind(address)
-        .with_context(|| format!("failed to bind to {address}"))
-        .unwrap();
-
-    let serve_address = listener
-        .local_addr()
-        .with_context(|| format!("could not get local socket address of listener {listener:?}"))
-        .unwrap();
-
-    info!("serving address: {serve_address}");
-
-    let handler_opts = RequestHandlerOpts {
-        root_dir: serve_path.path().to_path_buf(),
-        compression: false,
-        compression_static: false,
-        cors: None,
-        security_headers: false,
-        cache_control_headers: false,
-        page404: serve_path.path().join("404.html"),
-        page50x: PathBuf::new(),
-        index_files: ["index.html"].iter().map(|s| s.to_string()).collect(),
-        log_remote_address: false,
-        log_x_real_ip: false,
-        log_forwarded_for: false,
-        trusted_proxies: Vec::new(),
-        redirect_trailing_slash: false,
-        ignore_hidden_files: true,
-        disable_symlinks: true,
-        accept_markdown: false,
-        health: false,
-        maintenance_mode: false,
-        maintenance_mode_status: StatusCode::SERVICE_UNAVAILABLE,
-        maintenance_mode_file: PathBuf::new(),
-        advanced_opts: None,
-    };
-
-    let router_service = RouterService::new(RequestHandler {
-        opts: Arc::from(handler_opts),
-    });
 
     let signals = signals::create_signals()
         .context("failed to create signals stream")
         .unwrap();
-
     let handle = signals.handle();
 
-    listener
-        .set_nonblocking(true)
-        .with_context(|| format!("could not set TCP stream non-blocking for listener {listener:?}"))
-        .unwrap();
+    let args = cli::parse();
 
-    let failed_to_create_server_msg =
-        format!("failed to create hyper server from listener {listener:?}");
-
-    let server = hyper::Server::from_tcp(listener)
-        .context(failed_to_create_server_msg)
-        .unwrap()
-        .tcp_nodelay(true)
-        .serve(router_service);
-
-    let server =
-        server.with_graceful_shutdown(signals::wait_for_signals(signals, 0, Default::default()));
-
-    let browser_data_dir = tempdir()
-        .context("failed to create temporary browser data dir")
-        .unwrap();
-
-    debug!("browser data dir: {browser_data_dir:?}");
-
-    let mut browser_config_builder = BrowserConfig::builder()
-        .with_head()
-        .viewport(None)
-        .user_data_dir(browser_data_dir.path())
-        .port(0);
-
-    if std::env::var(common::TESTING_MODE).is_ok() {
-        browser_config_builder = browser_config_builder.launch_timeout(Duration::from_mins(15));
-    }
-
-    let browser_config = browser_config_builder
-        .build()
-        .map_err(|e| anyhow!("failed to build browser config: {e}"))
-        .unwrap();
-
-    debug!("browser config: {browser_config:?}");
-
-    let (mut browser, _handler) = Browser::launch(browser_config)
+    let git_toplevel = project_path::resolve(&current_dir().unwrap())
         .await
-        .context("failed to launch browser")
         .unwrap();
 
-    let browser_debugging_address = browser.websocket_address().clone();
-    debug!("browser debugging address: {browser_debugging_address}");
-
-    let browser_pid = browser
-        .get_mut_child()
-        .context("failed to obtain mutable reference to browser Child")
-        .unwrap()
-        .as_mut_inner()
-        .id()
-        .context("failed to obtain browser pid")
-        .unwrap();
-
+    // https://github.com/static-web-server/static-web-server/pull/606
+    let serve_dir = TempDir::with_prefix("not-hidden-").unwrap();
+    debug!("serve path: {serve_dir:?}");
+    let build_command = BuildCommand::new(args.build_command, serve_dir.path().to_path_buf());
+    build_command.invoke().await.unwrap();
+    let file_watcher = FileWatcher::new(build_command.clone(), git_toplevel).unwrap();
+    file_watcher.init().await.unwrap();
+    let server = Server::init(serve_dir.path().to_path_buf()).await.unwrap();
+    let mut browser = Browser::init().await.unwrap();
+    let browser_pid = browser.pid().unwrap();
     debug!("browser pid: {browser_pid}");
 
     if std::env::var(TESTING_MODE).is_ok() {
-        let state_for_testing = StateForTesting {
-            serve_port: serve_address.port(),
-            browser_debugging_address,
-            browser_pid,
-            serve_path: serve_path.path().to_path_buf(),
-        };
-
-        debug!("{state_for_testing:?}");
-        let state_for_testing = serde_json::to_string(&state_for_testing)
-            .context("failed to serialize state for testing")
-            .unwrap();
-        println!("{state_for_testing}");
+        StateForTesting::print(
+            serve_dir.path().to_path_buf(),
+            server.port(),
+            browser.debugging_address(),
+            browser.pid().unwrap(),
+        )
+        .unwrap();
     }
 
-    // chromiumoxide sets up the browser with `kill_on_drop`.
-    // This prevents that from happening.
-    mem::forget(browser);
+    let shutdown_signal =
+        static_web_server::signals::wait_for_signals(signals, 0, Default::default());
 
-    server.await.context("server failed").unwrap();
+    server
+        .into_inner()
+        .with_graceful_shutdown(shutdown_signal)
+        .await
+        .context("server failed")
+        .unwrap();
+
     handle.close();
 }
