@@ -7,6 +7,7 @@ mod file_watching;
 mod logging;
 mod project_path;
 mod server;
+mod testing;
 
 use std::env::current_dir;
 
@@ -43,7 +44,7 @@ async fn main() {
     let serve_dir = TempDir::with_prefix("not-hidden-").unwrap();
     debug!("serve path: {serve_dir:?}");
     let build_command = BuildCommand::new(args.build_command, serve_dir.path().to_path_buf());
-    build_command.invoke().await.unwrap();
+    build_command.invoke_or_queue();
     let file_watcher = FileWatcher::new(build_command, git_toplevel).unwrap();
     file_watcher.init().await.unwrap();
     let server = Server::init(serve_dir.path().to_path_buf()).await.unwrap();

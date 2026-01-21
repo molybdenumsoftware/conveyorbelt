@@ -25,7 +25,7 @@ impl FileWatcher {
     pub async fn init(self) -> anyhow::Result<()> {
         let wx = Watchexec::new(move |action| {
                 info!("change detected: {:?}", action.events);
-                self.build_command.invoke();
+                self.build_command.invoke_or_queue();
                 action
             })?;
 

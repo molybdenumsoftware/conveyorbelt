@@ -1,5 +1,6 @@
 use std::{io::BufRead as _, path::PathBuf, process::ExitStatus};
 
+use anyhow::Context as _;
 use nix::{sys::signal::Signal, unistd::Pid};
 use serde::{Deserialize, Serialize};
 use tokio::io::AsyncBufReadExt as _;
@@ -128,6 +129,16 @@ impl Drop for DroppyChild {
 pub trait Signalable {
     fn signal(&self, signal: Signal) -> anyhow::Result<()>;
     fn kill_wait(&mut self, signal: Signal) -> anyhow::Result<ExitStatus>;
+}
+
+impl Signalable for DroppyChild {
+    fn signal(&self, signal: Signal) -> anyhow::Result<()> {
+        self.0.as_ref().context("droppy child")?.signal(signal)
+    }
+
+    fn kill_wait(&mut self, signal: Signal) -> anyhow::Result<ExitStatus> {
+        self.0.as_mut().context("droppy child")?.kill_wait(signal)
+    }
 }
 
 impl Signalable for std::process::Child {

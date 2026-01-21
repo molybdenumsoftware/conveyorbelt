@@ -2,15 +2,7 @@
 mod common;
 
 use std::{
-    collections::BTreeSet,
-    fs::Permissions,
-    io::{BufRead as _, Write},
-    net::Ipv4Addr,
-    os::unix::fs::{PermissionsExt, symlink},
-    path::{Path, PathBuf},
-    process::{ExitStatus, Stdio},
-    sync::{Arc, Mutex},
-    vec::Vec,
+    collections::BTreeSet, fs::Permissions, io::{BufRead as _, Write}, net::Ipv4Addr, os::unix::fs::{PermissionsExt, symlink}, path::{Path, PathBuf}, process::Stdio, sync::{Arc, Mutex}, vec::Vec
 };
 
 use anyhow::{Context, anyhow, bail};
@@ -24,12 +16,12 @@ use chromiumoxide::{
 use futures::StreamExt as _;
 use indoc::formatdoc;
 use maud::{DOCTYPE, html};
-use nix::{sys::signal::Signal, unistd::Pid};
+use nix::sys::signal::Signal;
 use sysinfo::{ProcessRefreshKind, RefreshKind};
 use tempfile::{NamedTempFile, TempDir, TempPath};
 use tokio::task::JoinHandle;
 
-use crate::common::{ForStdoutputLine as _, SERVE_PATH, StateForTesting, TESTING_MODE};
+use crate::common::{DroppyChild, ForStdoutputLine as _, SERVE_PATH, Signalable as _, StateForTesting, TESTING_MODE};
 
 #[derive(Debug)]
 struct Subject {
@@ -72,7 +64,7 @@ impl Xvfb {
             })
             .unwrap();
 
-        Ok(Self(DroppyChild(Some(process))))
+        Ok(Self(DroppyChild::new(process)))
     }
 }
 
@@ -126,7 +118,7 @@ impl DBusSession {
             })
             .unwrap();
 
-        Ok(Self(DroppyChild(Some(process))))
+        Ok(Self(DroppyChild::new(process)))
     }
 }
 
@@ -185,9 +177,6 @@ impl Subject {
 
         let stdout = self
             .process
-            .0
-            .as_mut()
-            .context("droppy child")?
             .stdout
             .as_mut()
             .context("obtaining subject stdout mutable reference")?;
@@ -371,7 +360,7 @@ impl Fixture {
             .context("handling subject stderr")?;
 
         Ok(Subject {
-            process: DroppyChild(Some(process)),
+            process: DroppyChild::new(process),
             state_for_testing: None,
             stderr,
         })
@@ -763,7 +752,7 @@ fn cannot_find_git_executable() {
     fixture.subject_path_env_var.remove(env!("GIT_BIN_PATH"));
     let mut subject = fixture.spawn_subject().unwrap();
     subject.wait_stderr_line_contains("failed to run ").unwrap();
-    let status = subject.process.take().unwrap().wait().unwrap();
+    let status = subject.process.wait().unwrap();
     assert_eq!(status.code(), Some(101));
 }
 
@@ -781,7 +770,7 @@ fn cannot_find_browser_executable() {
         .wait_stderr_line_contains("Could not auto detect a chrome executable")
         .unwrap();
 
-    let status = subject.process.take().unwrap().wait().unwrap();
+    let status = subject.process.wait().unwrap();
     assert_eq!(status.code(), Some(101));
 }
 
@@ -795,7 +784,7 @@ fn not_inside_a_git_work_tree() {
         .wait_stderr_line_contains("not a git repository")
         .unwrap();
 
-    let status = subject.process.take().unwrap().wait().unwrap();
+    let status = subject.process.wait().unwrap();
     assert_eq!(status.code(), Some(101));
 }
 
@@ -809,7 +798,7 @@ fn build_command_not_found() {
         .wait_stderr_line_contains("No such file or directory")
         .unwrap();
 
-    let status = subject.process.take().unwrap().wait().unwrap();
+    let status = subject.process.wait().unwrap();
     assert_eq!(status.code(), Some(101));
 }
 
@@ -823,7 +812,7 @@ fn build_command_not_executable() {
         .wait_stderr_line_contains("Permission denied")
         .unwrap();
 
-    let status = subject.process.take().unwrap().wait().unwrap();
+    let status = subject.process.wait().unwrap();
     assert_eq!(status.code(), Some(101));
 }
 
