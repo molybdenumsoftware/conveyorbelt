@@ -1024,6 +1024,7 @@ async fn browser_reloads_following_build_command_execution() {
 // TODO method for signalling Subject
 // TODO test for logging of detected changes
 // TODO tests return Result?
+// TODO use watchexec to handle signals
 
 #[test]
 fn no_extraneous_build_command_invocations() {
