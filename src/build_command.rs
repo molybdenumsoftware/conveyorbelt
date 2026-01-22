@@ -17,9 +17,8 @@ enum SyncState {
 
 #[derive(Debug, Clone)]
 pub struct BuildCommand {
-    path: PathBuf,
-    serve_path: PathBuf,
-    sync_state: Arc<Mutex<SyncState>>,
+    pub path: PathBuf,
+    pub serve_path: PathBuf,
 }
 
 impl BuildCommand {
@@ -27,7 +26,6 @@ impl BuildCommand {
         Self {
             path,
             serve_path,
-            sync_state: Arc::new(Mutex::new(SyncState::NotRunning)),
         }
     }
 
@@ -75,41 +73,5 @@ impl BuildCommand {
         } else {
             info!("build command {build_process_exit_status}, {build_command:?}");
         };
-    }
-
-    pub fn invoke_or_queue(&self) {
-        let clone = self.clone();
-
-        std::thread::spawn(move || {
-            let mut mutex_guard = clone.sync_state.lock().unwrap();
-
-            match *mutex_guard {
-                SyncState::NotRunning => {
-                    (*mutex_guard) = SyncState::Running;
-                    drop(mutex_guard);
-                    clone.invoke_and_wait();
-                    let mut mutex_guard = clone.sync_state.lock().unwrap();
-
-                    match *mutex_guard {
-                        SyncState::NotRunning => unreachable!(),
-                        SyncState::Running => {
-                            *mutex_guard = SyncState::NotRunning;
-                            drop(mutex_guard);
-                        }
-                        SyncState::RunningAndQueued => {
-                            drop(mutex_guard);
-                            clone.invoke_or_queue();
-                        }
-                    }
-                }
-                SyncState::Running => {
-                    (*mutex_guard) = SyncState::RunningAndQueued;
-                    drop(mutex_guard);
-                }
-                SyncState::RunningAndQueued => {
-                    drop(mutex_guard);
-                }
-            }
-        });
     }
 }
