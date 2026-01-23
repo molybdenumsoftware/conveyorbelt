@@ -555,10 +555,6 @@ async fn custom_404_page() {
     let fixture = Fixture::init().unwrap();
 
     fixture
-        .write_source_file("exists.html", HtmlPage::new().title("I'm here!"))
-        .unwrap();
-
-    fixture
         .write_source_file("404.html", HtmlPage::new().title("Ain't found"))
         .unwrap();
 
@@ -571,6 +567,7 @@ async fn custom_404_page() {
         .await
         .unwrap();
 
+    subject.wait_stderr_line_contains("build command succeeded").unwrap();
     page.goto(subject.url("/nope.html").unwrap()).await.unwrap();
     let response_status = responses.next().await.unwrap().response.status;
     assert_eq!(response_status, 404);
@@ -852,7 +849,6 @@ fn build_command_not_executable_and_later_is() {
         .unwrap();
 
     // TODO resolve race
-    dbg!("sleeping");
     std::thread::sleep(Duration::from_secs(1));
 
     fixture.write_source_file("trigger", "").unwrap();
@@ -1025,6 +1021,7 @@ async fn browser_reloads_following_build_command_execution() {
 // TODO test for logging of detected changes
 // TODO tests return Result?
 // TODO use watchexec to handle signals
+// TODO loggin of termination by signal
 
 #[test]
 fn no_extraneous_build_command_invocations() {

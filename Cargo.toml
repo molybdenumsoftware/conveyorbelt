@@ -36,6 +36,11 @@ default-features = false
 features = ["signal"]
 version = "*"
 
+[dependencies.process-wrap]
+default-features = false
+features = ["tokio1"]
+version = "*"
+
 [dependencies.serde]
 default-features = false
 version = "*"

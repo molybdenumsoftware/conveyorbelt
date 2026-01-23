@@ -1,20 +1,14 @@
 use std::{
     path::PathBuf,
     process::{Command, Stdio},
-    sync::{Arc, Mutex},
 };
 
 use tracing::{info, warn};
 
 use crate::common::{DroppyChild, ForStdoutputLine as _, SERVE_PATH};
 
-#[derive(Debug, Clone, Copy)]
-enum SyncState {
-    NotRunning,
-    Running,
-    RunningAndQueued,
-}
 
+// TODO seems like this struct might be extraneous
 #[derive(Debug, Clone)]
 pub struct BuildCommand {
     pub path: PathBuf,

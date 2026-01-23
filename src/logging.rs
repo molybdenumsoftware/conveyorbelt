@@ -1,4 +1,4 @@
-use tracing::level_filters::LevelFilter;
+use tracing::{info, level_filters::LevelFilter};
 
 pub fn init() {
     let filter = tracing_subscriber::filter::EnvFilter::builder()
@@ -10,4 +10,6 @@ pub fn init() {
         .with_writer(std::io::stderr)
         .with_env_filter(filter)
         .init();
+
+    info!("{} starting", env!("CARGO_PKG_NAME"));
 }

@@ -38,6 +38,9 @@ in
           version = "0";
         };
         nix.features = [ "signal" ];
+        process-wrap = {
+        features = ["tokio1"];
+        };
         tokio.features = [
           "io-util"
           "process"
