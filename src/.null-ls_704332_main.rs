@@ -12,13 +12,12 @@ mod server;
 mod testing;
 mod config;
 
-use std::time::Duration;
 
 use watchexec::Watchexec;
-use watchexec_events::Priority;
+use watchexec_events::{Event, Priority};
 
 use crate::{
-    config::Config, event_filterer::EventFilterer, event_handler::initial_event
+    config::Config, event_filterer::EventFilterer
 };
 
 #[tokio::main]
@@ -27,11 +26,10 @@ async fn main() -> anyhow::Result<()> {
     logging::init();
     let config = Config::obtain()?;
     let wx = Watchexec::default();
-    wx.config.throttle(Duration::ZERO); // to guarantee one event at a time
     wx.config.pathset([config.project_root.as_path()]);
-    wx.config.filterer(EventFilterer::new(config.project_root).await?);
-    wx.config.on_action(event_handler::new(config));
-    wx.send_event(initial_event(), Priority::Normal).await?;
+    wx.config.filterer(EventFilterer::new(config.project_root.clone()).await?);
+    event_handler::set(wx.config, config);
+    wx.send_event(Event::default(), Priority::Normal).await?;
     wx.main().await??;
     Ok(())
 }

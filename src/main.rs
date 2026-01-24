@@ -3,6 +3,7 @@ mod build_command;
 mod cli;
 #[path = "../common.rs"]
 mod common;
+mod config;
 mod event_filterer;
 mod event_handler;
 mod logging;
@@ -10,27 +11,22 @@ mod project_path;
 mod serve_dir;
 mod server;
 mod testing;
-mod config;
-
-use std::time::Duration;
 
 use watchexec::Watchexec;
 use watchexec_events::{Event, Priority};
 
-use crate::{
-    config::Config, event_filterer::EventFilterer
-};
+use crate::{config::Config, event_filterer::EventFilterer};
 
 #[tokio::main]
 
 async fn main() -> anyhow::Result<()> {
     logging::init();
     let config = Config::obtain()?;
-    let wx = Watchexec::default();
-    wx.config.throttle(Duration::ZERO); // to guarantee one event at a time
+    let mut wx = Watchexec::default();
     wx.config.pathset([config.project_root.as_path()]);
-    wx.config.filterer(EventFilterer::new(config.project_root.clone()).await?);
-    wx.config.on_action(event_handler::new(config));
+    wx.config
+        .filterer(EventFilterer::new(config.project_root.clone()).await?);
+    event_handler::set(&mut wx.config, config);
     wx.send_event(Event::default(), Priority::Normal).await?;
     wx.main().await??;
     Ok(())
