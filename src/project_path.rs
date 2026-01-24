@@ -1,10 +1,9 @@
-use std::path::{Path, PathBuf};
+use std::{path::{Path, PathBuf}, process::Command};
 
 use anyhow::{Context as _, Ok, bail};
-use tokio::process::Command;
 use tracing::debug;
 
-pub async fn resolve(origin: &Path) -> anyhow::Result<PathBuf> {
+pub fn resolve(origin: &Path) -> anyhow::Result<PathBuf> {
     let mut command = Command::new("git");
 
     command
@@ -13,7 +12,6 @@ pub async fn resolve(origin: &Path) -> anyhow::Result<PathBuf> {
 
     let output = command
         .output()
-        .await
         .with_context(|| format!("failed to run {command:?}"))?;
 
     if !output.status.success() {
