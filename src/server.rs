@@ -15,7 +15,7 @@ use tracing::info;
 pub(crate) struct Server(hyper::Server<AddrIncoming, RouterService>);
 
 impl Server {
-    pub(crate) async fn init(path: PathBuf) -> anyhow::Result<Self> {
+    pub(crate) fn init(path: PathBuf) -> anyhow::Result<Self> {
         let handler_opts = RequestHandlerOpts {
             root_dir: path.clone(),
             compression: false,

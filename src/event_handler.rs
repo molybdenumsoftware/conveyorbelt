@@ -1,5 +1,4 @@
 use chromiumoxide::Browser;
-use watchexec::command::{Program, SpawnOptions};
 use std::sync::Mutex;
 use std::{sync::Arc, time::Duration};
 use tracing::info;
@@ -53,7 +52,8 @@ pub(crate) fn set(wx_config: &mut Arc<watchexec::Config>, config: Arc<Config>) {
 
             match state {
                 State::Initial => {
-                    let id = build_command::spawn(&mut action, Arc::clone(&config));
+                    let build_job_id = build_command::spawn(&mut action, Arc::clone(&config));
+                    let server = 
                 }
                 State::StartingServer {
                     build_job,
