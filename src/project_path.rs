@@ -3,7 +3,7 @@ use std::{path::{Path, PathBuf}, process::Command};
 use anyhow::{Context as _, Ok, bail};
 use tracing::debug;
 
-pub fn resolve(origin: &Path) -> anyhow::Result<PathBuf> {
+pub(crate) fn resolve(origin: &Path) -> anyhow::Result<PathBuf> {
     let mut command = Command::new("git");
 
     command

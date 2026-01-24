@@ -34,7 +34,7 @@ use crate::common::{
     DroppyChild, ForStdoutputLine as _, SERVE_PATH, Signalable as _, StateForTesting, TESTING_MODE,
 };
 
-pub trait KillWait {
+pub(crate) trait KillWait {
     fn kill_wait(&mut self, signal: Signal) -> anyhow::Result<ExitStatus>;
 }
 

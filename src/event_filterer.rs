@@ -6,7 +6,7 @@ use watchexec_events::{Event, Priority, Tag, filekind::FileEventKind};
 use watchexec_filterer_ignore::IgnoreFilterer;
 
 #[derive(Debug)]
-pub struct EventFilterer {
+pub(crate) struct EventFilterer {
     initial_build: InitialBuildFilterer,
     dot_git: DotGitFilterer,
     ignore: IgnoreFilterer,
@@ -14,7 +14,7 @@ pub struct EventFilterer {
 }
 
 impl EventFilterer {
-    pub async fn new(project_root: PathBuf) -> anyhow::Result<Self> {
+    pub(crate) async fn new(project_root: PathBuf) -> anyhow::Result<Self> {
         let mut ignore_filter = IgnoreFilter::new(&project_root, &[]).await?;
         ignore_filter.finish();
 

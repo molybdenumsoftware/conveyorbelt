@@ -12,10 +12,10 @@ use static_web_server::{
 };
 use tracing::info;
 
-pub struct Server(hyper::Server<AddrIncoming, RouterService>);
+pub(crate) struct Server(hyper::Server<AddrIncoming, RouterService>);
 
 impl Server {
-    pub async fn init(path: PathBuf) -> anyhow::Result<Self> {
+    pub(crate) async fn init(path: PathBuf) -> anyhow::Result<Self> {
         let handler_opts = RequestHandlerOpts {
             root_dir: path.clone(),
             compression: false,
@@ -68,11 +68,11 @@ impl Server {
         Ok(Self(server))
     }
 
-    pub fn port(&self) -> u16 {
+    pub(crate) fn port(&self) -> u16 {
         self.0.local_addr().port()
     }
 
-    pub fn into_inner(self) -> hyper::Server<AddrIncoming, RouterService> {
+    pub(crate) fn into_inner(self) -> hyper::Server<AddrIncoming, RouterService> {
         self.0
     }
 }

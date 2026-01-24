@@ -1,84 +1,41 @@
-use std::{
-    collections::HashMap,
-    path::PathBuf,
-    process::Stdio,
-    sync::{Arc, Mutex},
-    time::Duration,
-};
-use tokio::task::JoinHandle;
+use std::sync::Mutex;
+use std::{collections::HashMap, path::PathBuf, process::Stdio, sync::Arc, time::Duration};
+use chromiumoxide::Browser;
 use tracing::info;
+use watchexec::Id as JobId;
+use watchexec::action::ActionHandler;
 use watchexec_events::{Event, ProcessEnd};
 
-use watchexec::error::CriticalError;
 use watchexec_events::Tag;
 
-use crate::common::{ForStdoutputLine as _, SERVE_PATH};
+use crate::config::Config;
 
-#[derive(Debug, Clone)]
-struct CommandWrapper {
-    serve_path: PathBuf,
-}
-
-impl process_wrap::tokio::CommandWrapper for CommandWrapper {
-    fn pre_spawn(
-        &mut self,
-        command: &mut tokio::process::Command,
-        _core: &process_wrap::tokio::CommandWrap,
-    ) -> std::io::Result<()> {
-        command
-            .env(SERVE_PATH, self.serve_path.as_path())
-            .stdout(Stdio::piped())
-            .stderr(Stdio::piped());
-        Ok(())
-    }
-
-    fn post_spawn(
-        &mut self,
-        _command: &mut tokio::process::Command,
-        child: &mut tokio::process::Child,
-        _core: &process_wrap::tokio::CommandWrap,
-    ) -> std::io::Result<()> {
-        child
-            .for_stdout_line(|line| {
-                info!("build command stdout: {line}");
-            })
-            .unwrap();
-
-        child
-            .for_stderr_line(|line| {
-                info!("build command stderr: {line}");
-            })
-            .unwrap();
-        Ok(())
-    }
-}
 
 #[derive(Debug)]
-pub struct FileWatcherConfig {
-    project_root: PathBuf,
-    serve_path: PathBuf,
-    build_command: PathBuf,
-}
-
-impl FileWatcherConfig {
-    pub fn new(project_root: PathBuf, serve_path: PathBuf, build_command: PathBuf) -> Self {
-        Self {
-            build_command,
-            project_root,
-            serve_path,
-        }
-    }
-
-    pub async fn init(self) -> anyhow::Result<JoinHandle<Result<(), CriticalError>>> {
-        let is_build_queued = Arc::new(Mutex::new(false));
-        let serve_path = self.serve_path.clone();
-        let build_command = Arc::clone(&self.build_command);
-
-        Ok(main)
+enum State {
+    Initial,
+    StartingServer {
+        build_job: JobId,
+        server_job: JobId,
+    },
+    StartingBrowser {
+        build_job: JobId,
+        server: (),
+        browser_job: JobId,
+    },
+    Ready {
+        build_job: JobId,
+        server: (),
+        browser_job: JobId,
+        browser: Browser,
     }
 }
 
-pub fn new() -> impl Fn(ActionHandler) -> ActionHandler + Send + Sync + 'static {
+pub(crate) fn new(
+    config: Arc<Config>,
+) -> impl Fn(ActionHandler) -> ActionHandler + Send + Sync + 'static {
+    let state = Arc::new(Mutex::new(State::Initial));
+
     move |mut action| {
         let signal = action.signals().next();
 
@@ -92,7 +49,7 @@ pub fn new() -> impl Fn(ActionHandler) -> ActionHandler + Send + Sync + 'static 
             unreachable!("thanks to zero throttling");
         };
 
-        if event.metadata.contains_key("initial-build") || event.paths().count() > 0 {
+        if event.paths().count() > 0 {
             if action.list_jobs().count() > 0 {
                 *is_build_queued.lock().unwrap() = true;
                 return action;
@@ -155,12 +112,5 @@ pub fn new() -> impl Fn(ActionHandler) -> ActionHandler + Send + Sync + 'static 
             }
         };
         action
-    }
-}
-
-pub fn initial_event() -> Event {
-    Event {
-        tags: Vec::new(),
-        metadata: HashMap::from_iter([("initialize".to_string(), Vec::new())]),
     }
 }

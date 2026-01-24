@@ -4,19 +4,19 @@ use nix::{sys::signal::Signal, unistd::Pid};
 use serde::{Deserialize, Serialize};
 use tokio::io::AsyncBufReadExt as _;
 
-pub const SERVE_PATH: &str = env!("SERVE_PATH");
+pub(crate) const SERVE_PATH: &str = env!("SERVE_PATH");
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct StateForTesting {
-    pub serve_path: PathBuf,
-    pub serve_port: u16,
-    pub browser_debugging_address: String,
-    pub browser_pid: u32,
+pub(crate) struct StateForTesting {
+    pub(crate) serve_path: PathBuf,
+    pub(crate) serve_port: u16,
+    pub(crate) browser_debugging_address: String,
+    pub(crate) browser_pid: u32,
 }
 
-pub const TESTING_MODE: &str = "_TESTING_MODE";
+pub(crate) const TESTING_MODE: &str = "_TESTING_MODE";
 
-pub trait ForStdoutputLine {
+pub(crate) trait ForStdoutputLine {
     fn for_stderr_line(&mut self, f: impl Fn(&str) + Send + 'static) -> Option<()>;
     fn for_stdout_line(&mut self, f: fn(line: &str)) -> Option<()>;
 }
@@ -86,10 +86,10 @@ impl ForStdoutputLine for tokio::process::Child {
 }
 
 #[derive(Debug)]
-pub struct DroppyChild(Option<std::process::Child>);
+pub(crate) struct DroppyChild(Option<std::process::Child>);
 
 impl DroppyChild {
-    pub fn new(child: std::process::Child) -> Self {
+    pub(crate) fn new(child: std::process::Child) -> Self {
         Self(Some(child))
     }
 }
@@ -125,7 +125,7 @@ impl Drop for DroppyChild {
     }
 }
 
-pub trait Signalable {
+pub(crate) trait Signalable {
     fn signal(&self, signal: Signal) -> anyhow::Result<()>;
 }
 
