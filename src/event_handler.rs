@@ -13,13 +13,11 @@ use crate::config::Config;
 #[derive(Debug)]
 enum State {
     Initial,
-    StartingServer {
+    InitialBuild {
         build_job: JobId,
-        server_job: JobId,
     },
     StartingBrowser {
         build_job: JobId,
-        server: (),
         browser_job: JobId,
     },
     Ready {
