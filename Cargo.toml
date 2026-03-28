@@ -9,12 +9,16 @@ version = "*"
 
 [dependencies.chromiumoxide]
 default-features = false
-features = ["tokio-runtime"]
 version = "*"
 
 [dependencies.clap]
 default-features = false
 features = ["derive"]
+version = "*"
+
+[dependencies.derive_more]
+default-features = false
+features = ["deref", "deref_mut"]
 version = "*"
 
 [dependencies.hyper]
@@ -25,6 +29,25 @@ version = "0"
 [dependencies.ignore-files]
 default-features = false
 version = "*"
+
+[dependencies.nix]
+default-features = false
+features = ["signal"]
+version = "*"
+
+[dependencies.notify]
+default-features = false
+version = "*"
+
+[dependencies.process-wrap]
+default-features = false
+features = ["tokio1"]
+version = "*"
+
+[dependencies.rxrust]
+default-features = false
+features = ["scheduler"]
+version = "1.0.0-rc.3"
 
 [dependencies.serde]
 default-features = false
@@ -68,11 +91,6 @@ version = "*"
 default-features = false
 version = "*"
 
-[dev-dependencies.derive_more]
-default-features = false
-features = ["deref", "deref_mut"]
-version = "*"
-
 [dev-dependencies.futures]
 default-features = false
 version = "*"
@@ -83,11 +101,6 @@ version = "*"
 
 [dev-dependencies.maud]
 default-features = false
-version = "*"
-
-[dev-dependencies.nix]
-default-features = false
-features = ["signal"]
 version = "*"
 
 [dev-dependencies.static_init]

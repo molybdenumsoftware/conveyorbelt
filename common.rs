@@ -1,48 +1,29 @@
 use std::{io::BufRead as _, path::PathBuf};
 
-use anyhow::Context as _;
+use nix::{sys::signal::Signal, unistd::Pid};
 use serde::{Deserialize, Serialize};
 use tokio::io::AsyncBufReadExt as _;
-use tracing::debug;
 
-pub const SERVE_PATH: &str = env!("SERVE_PATH");
+pub(crate) const SERVE_PATH: &str = env!("SERVE_PATH");
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct StateForTesting {
-    pub serve_path: PathBuf,
-    pub serve_port: u16,
-    pub browser_debugging_address: String,
-    pub browser_pid: u32,
+pub(crate) struct StateForTesting {
+    pub(crate) serve_path: PathBuf,
+    pub(crate) serve_port: u16,
+    pub(crate) browser_debugging_address: String,
+    pub(crate) browser_pid: u32,
 }
 
-impl StateForTesting {
-    #[cfg_attr(test, allow(dead_code))]
-    pub(crate) fn print(
-        serve_path: PathBuf,
-        serve_port: u16,
-        browser_debugging_address: String,
-        browser_pid: u32,
-    ) -> anyhow::Result<()> {
-        let state_for_testing = Self {
-            serve_path,
-            serve_port,
-            browser_debugging_address,
-            browser_pid,
-        };
-
-        debug!("{state_for_testing:?}");
-
-        let state_for_testing = serde_json::to_string(&state_for_testing)
-            .context("failed to serialize state for testing")?;
-
-        println!("{state_for_testing}");
-        Ok(())
+impl std::fmt::Display for StateForTesting {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        let string = serde_json::to_string(&self).unwrap();
+        write!(f, "{string}")
     }
 }
 
-pub const TESTING_MODE: &str = "_TESTING_MODE";
+pub(crate) const TESTING_MODE: &str = "_TESTING_MODE";
 
-pub trait ForStdoutputLine {
+pub(crate) trait ForStdoutputLine {
     fn for_stderr_line(&mut self, f: impl Fn(&str) + Send + 'static) -> Option<()>;
     fn for_stdout_line(&mut self, f: fn(line: &str)) -> Option<()>;
 }
@@ -108,5 +89,57 @@ impl ForStdoutputLine for tokio::process::Child {
         });
 
         Some(())
+    }
+}
+
+#[derive(Debug)]
+pub(crate) struct DroppyChild(Option<std::process::Child>);
+
+impl DroppyChild {
+    pub(crate) fn new(child: std::process::Child) -> Self {
+        Self(Some(child))
+    }
+}
+
+impl std::ops::Deref for DroppyChild {
+    type Target = std::process::Child;
+
+    fn deref(&self) -> &Self::Target {
+        self.0.as_ref().unwrap()
+    }
+}
+
+impl std::ops::DerefMut for DroppyChild {
+    fn deref_mut(&mut self) -> &mut Self::Target {
+        self.0.as_mut().unwrap()
+    }
+}
+
+impl Drop for DroppyChild {
+    fn drop(&mut self) {
+        let Some(mut inner) = self.0.take() else {
+            return;
+        };
+        if let Err(e) = inner.signal(Signal::SIGTERM) {
+            eprintln!("Failed to signal dropped child: {e}");
+            return;
+        }
+        let Ok(status) = inner.wait() else { return };
+        if status.success() {
+            return;
+        }
+        eprintln!("Dropped child terminated with {status}")
+    }
+}
+
+pub(crate) trait Signalable {
+    fn signal(&self, signal: Signal) -> anyhow::Result<()>;
+}
+
+impl Signalable for std::process::Child {
+    fn signal(&self, signal: Signal) -> anyhow::Result<()> {
+        let pid = Pid::from_raw(self.id().try_into()?);
+        nix::sys::signal::kill(pid, signal)?;
+        Ok(())
     }
 }

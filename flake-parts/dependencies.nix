@@ -13,7 +13,9 @@ in
   cargoManifest = {
     dependencies =
       lib.genAttrs [
+        "chromiumoxide"
         "ignore-files"
+        "notify"
         "serde"
         "serde_json"
         "static-web-server"
@@ -24,14 +26,25 @@ in
         "watchexec-filterer-ignore"
       ] (_: { })
       |> lib.mergeAttrs {
-        chromiumoxide.features = [ "tokio-runtime" ];
         clap.features = [ "derive" ];
+        derive_more.features = [
+          "deref"
+          "deref_mut"
+        ];
         hyper = {
           features = [
             "http1"
             "server"
           ];
           version = "0";
+        };
+        nix.features = [ "signal" ];
+        process-wrap = {
+          features = [ "tokio1" ];
+        };
+        rxrust = {
+          features = [ "scheduler" ];
+          version = "1.0.0-rc.3";
         };
         tokio.features = [
           "io-util"
@@ -54,12 +67,9 @@ in
       ] (_: { })
       |> lib.mergeAttrs {
         sysinfo.features = [ "system" ];
-        derive_more.features = [
-          "deref"
-          "deref_mut"
-        ];
-        nix.features = [ "signal" ];
       }
       |> applyDefaults;
   };
+
+  perSystem.buildEnv.RUSTFLAGS = "--cfg tokio_unstable";
 }

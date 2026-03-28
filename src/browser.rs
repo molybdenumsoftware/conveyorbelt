@@ -8,10 +8,10 @@ use tracing::debug;
 use crate::common::TESTING_MODE;
 
 #[derive(Debug)]
-pub struct Browser(&'static mut chromiumoxide::Browser);
+pub(crate) struct Browser(&'static mut chromiumoxide::Browser);
 
 impl Browser {
-    pub async fn init() -> anyhow::Result<Self> {
+    pub(crate) async fn init() -> anyhow::Result<Self> {
         let browser_data_dir = tempdir().context("failed to create temporary browser data dir")?;
 
         debug!("browser data dir: {browser_data_dir:?}");
@@ -39,7 +39,7 @@ impl Browser {
         Ok(Self(Box::leak(Box::new(browser))))
     }
 
-    pub fn pid(&mut self) -> anyhow::Result<u32> {
+    pub(crate) fn pid(&mut self) -> anyhow::Result<u32> {
         self.0
             .get_mut_child()
             .context("failed to obtain mutable reference to browser Child")?
@@ -48,7 +48,7 @@ impl Browser {
             .context("failed to obtain browser pid")
     }
 
-    pub fn debugging_address(&self) -> String {
+    pub(crate) fn debugging_address(&self) -> String {
         self.0.websocket_address().clone()
     }
 }

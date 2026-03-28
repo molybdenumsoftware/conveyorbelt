@@ -12,10 +12,13 @@ use static_web_server::{
 };
 use tracing::info;
 
-pub struct Server(hyper::Server<AddrIncoming, RouterService>);
+pub(crate) struct Server(hyper::Server<AddrIncoming, RouterService>);
+
+#[derive(Debug, Clone, Copy)]
+pub(crate) struct ServerPort(pub(crate) u16);
 
 impl Server {
-    pub async fn init(path: PathBuf) -> anyhow::Result<Self> {
+    pub(crate) fn init(path: PathBuf) -> anyhow::Result<ServerPort> {
         let handler_opts = RequestHandlerOpts {
             root_dir: path.clone(),
             compression: false,
@@ -65,14 +68,14 @@ impl Server {
                 opts: Arc::from(handler_opts),
             }));
 
-        Ok(Self(server))
+        let port = server.local_addr().port();
+
+        tokio::spawn(server);
+
+        Ok(ServerPort(port))
     }
 
-    pub fn port(&self) -> u16 {
-        self.0.local_addr().port()
-    }
-
-    pub fn into_inner(self) -> hyper::Server<AddrIncoming, RouterService> {
+    pub(crate) fn into_inner(self) -> hyper::Server<AddrIncoming, RouterService> {
         self.0
     }
 }

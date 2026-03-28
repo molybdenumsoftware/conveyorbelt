@@ -4,12 +4,12 @@ use clap::Parser as _;
 use tracing::debug;
 
 #[derive(Debug, Clone, clap::Parser)]
-pub struct Args {
+pub(crate) struct Args {
     /// The build command
-    pub build_command: PathBuf,
+    pub(crate) build_command: PathBuf,
 }
 
-pub fn parse() -> Args {
+pub(crate) fn parse() -> Args {
     let args = Args::parse();
     debug!("arguments parsed: {args:?}");
     args

@@ -32,6 +32,14 @@
               drv = pkgs.writers.writeTOML "Cargo.toml" config.cargoManifest;
             }
           ];
+
+          make-shells.default = {
+            packages = [
+              pkgs.rust-analyzer
+              pkgs.rustfmt
+            ];
+            env.RUST_SRC_PATH = "${pkgs.rustPlatform.rustLibSrc}";
+          };
         };
       };
   };

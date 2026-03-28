@@ -36,7 +36,6 @@
       url = "github:nicknovitski/make-shell";
     };
     nixpkgs.url = "https://channels.nixos.org/nixpkgs-unstable/nixexprs.tar.xz";
-    systems.url = "github:nix-systems/default";
     treefmt-nix = {
       inputs.nixpkgs.follows = "nixpkgs";
       url = "github:numtide/treefmt-nix";
