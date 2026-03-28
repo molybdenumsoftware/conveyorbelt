@@ -1,13 +1,6 @@
-use std::{
-    convert::Infallible,
-    rc::Rc,
-    sync::{Arc, Mutex, mpsc},
-};
+use std::{convert::Infallible, rc::Rc, sync::Mutex};
 
-use anyhow::Context as _;
 use rxrust::prelude::*;
-use tempfile::tempdir;
-use tokio::task;
 
 use crate::browser::Browser;
 
@@ -17,9 +10,6 @@ pub(crate) struct BrowserSpawnDriver {
 
 #[derive(Debug, Clone)]
 pub(crate) struct BrowserSpawnDriverEvent(pub(crate) Result<Rc<Mutex<Browser>>, Rc<anyhow::Error>>);
-
-#[derive(Debug, Clone)]
-pub(crate) struct BrowserSpawnDriverCommand;
 
 impl BrowserSpawnDriver {
     pub(crate) fn new() -> (
@@ -32,24 +22,15 @@ impl BrowserSpawnDriver {
         (event_stream, driver)
     }
 
-    pub(crate) fn init(
-        mut self,
-        commands: LocalBoxedObservable<'static, BrowserSpawnDriverCommand, Infallible>,
-    ) -> BoxedSubscription {
-        commands
-            .delay(Duration::ZERO)
-            .switch_map(|_| {
-                Local::from_future(async {
-                    Browser::init()
-                        .await
-                        .map(|browser| Rc::new(Mutex::new(browser)))
-                        .map_err(Rc::new)
-                })
-            })
-            .subscribe(move |result| {
-                self.event_sender.next(BrowserSpawnDriverEvent(result));
-            })
-            .into_boxed()
+    pub(crate) fn effect(&self) -> impl Future<Output = ()> + 'static {
+        let mut event_sender = self.event_sender.clone();
+        async move {
+            let result = Browser::init()
+                .await
+                .map(|browser| Rc::new(Mutex::new(browser)))
+                .map_err(Rc::new);
+            event_sender.next(BrowserSpawnDriverEvent(result));
+        }
     }
 }
 

@@ -1,18 +1,14 @@
 use std::{
-    borrow::BorrowMut as _,
-    cell::RefCell,
     convert::Infallible,
-    ops::DerefMut as _,
-    path::PathBuf,
-    process::{Child, Command, ExitStatus},
+    process::{Child, ExitStatus},
     rc::Rc,
-    sync::{Arc, Mutex, mpsc},
+    sync::Mutex,
 };
 
 use rxrust::prelude::*;
 use tracing::info;
 
-use crate::common::{ForStdoutputLine as _, SERVE_PATH};
+use crate::common::ForStdoutputLine as _;
 
 pub(crate) struct ProcessWaitDriver {
     event_sender: LocalSubject<'static, ProcessWaitDriverEvent, Infallible>,
@@ -27,7 +23,7 @@ pub(crate) enum ProcessWaitDriverEvent {
 }
 
 #[derive(Debug, Clone)]
-pub(crate) struct ProcessWaitDriverCommand(pub(crate) Rc<Mutex<Child>>);
+pub(crate) struct ProcessWaitCommand(pub(crate) Rc<Mutex<Child>>);
 
 impl ProcessWaitDriver {
     pub(crate) fn new() -> (
@@ -41,34 +37,33 @@ impl ProcessWaitDriver {
         (event_stream, driver)
     }
 
-    pub(crate) fn init(
-        mut self,
-        commands: LocalBoxedObservable<'static, ProcessWaitDriverCommand, Infallible>,
-    ) -> BoxedSubscription {
-        commands
-            //TODO see whether the delay can be in one place
-            .delay(Duration::ZERO)
-            .subscribe(move |ProcessWaitDriverCommand(child)| {
-                let mut child = child.lock().unwrap();
+    pub(crate) fn effect(
+        &self,
+        ProcessWaitCommand(child): ProcessWaitCommand,
+    ) -> impl Future<Output = ()> + 'static {
+        let mut event_sender = self.event_sender.clone();
 
-                child
-                    .for_stdout_line(|line| {
-                        info!("build command stdout: {line}");
-                    })
-                    .unwrap();
+        async move {
+            let mut child = child.lock().unwrap();
 
-                child
-                    .for_stderr_line(|line| {
-                        info!("build command stderr: {line}");
-                    })
-                    .unwrap();
+            child
+                .for_stdout_line(|line| {
+                    info!("build command stdout: {line}");
+                })
+                .unwrap();
 
-                let event = match child.wait() {
-                    Ok(exit_status) => ProcessWaitDriverEvent::Terminated(exit_status),
-                    Err(error) => ProcessWaitDriverEvent::FailedToWait(Rc::new(error)),
-                };
-                self.event_sender.next(event);
-            })
-            .into_boxed()
+            child
+                .for_stderr_line(|line| {
+                    info!("build command stderr: {line}");
+                })
+                .unwrap();
+
+            let event = match child.wait() {
+                Ok(exit_status) => ProcessWaitDriverEvent::Terminated(exit_status),
+                Err(error) => ProcessWaitDriverEvent::FailedToWait(Rc::new(error)),
+            };
+
+            event_sender.next(event);
+        }
     }
 }

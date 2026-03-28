@@ -1,5 +1,5 @@
 use tempfile::TempDir;
-use tracing::{debug, info};
+use tracing::info;
 
 pub(crate) fn obtain() -> anyhow::Result<TempDir> {
     let serve_dir = TempDir::new()?;

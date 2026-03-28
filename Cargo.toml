@@ -21,6 +21,10 @@ default-features = false
 features = ["deref", "deref_mut"]
 version = "*"
 
+[dependencies.futures]
+default-features = false
+version = "*"
+
 [dependencies.hyper]
 default-features = false
 features = ["http1", "server"]
@@ -88,10 +92,6 @@ default-features = false
 version = "*"
 
 [dependencies.watchexec-filterer-ignore]
-default-features = false
-version = "*"
-
-[dev-dependencies.futures]
 default-features = false
 version = "*"
 

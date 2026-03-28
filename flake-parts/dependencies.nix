@@ -14,6 +14,7 @@ in
     dependencies =
       lib.genAttrs [
         "chromiumoxide"
+        "futures"
         "ignore-files"
         "notify"
         "serde"
@@ -60,7 +61,6 @@ in
 
     dev-dependencies =
       lib.genAttrs [
-        "futures"
         "indoc"
         "maud"
         "static_init"

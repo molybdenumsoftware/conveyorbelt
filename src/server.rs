@@ -5,14 +5,14 @@ use std::{
 };
 
 use anyhow::Context as _;
-use hyper::{StatusCode, server::conn::AddrIncoming};
+use hyper::StatusCode;
 use static_web_server::{
     handler::{RequestHandler, RequestHandlerOpts},
     service::RouterService,
 };
 use tracing::info;
 
-pub(crate) struct Server(hyper::Server<AddrIncoming, RouterService>);
+pub(crate) struct Server;
 
 #[derive(Debug, Clone, Copy)]
 pub(crate) struct ServerPort(pub(crate) u16);
@@ -73,9 +73,5 @@ impl Server {
         tokio::spawn(server);
 
         Ok(ServerPort(port))
-    }
-
-    pub(crate) fn into_inner(self) -> hyper::Server<AddrIncoming, RouterService> {
-        self.0
     }
 }
