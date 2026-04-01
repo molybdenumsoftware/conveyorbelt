@@ -9,10 +9,11 @@ use std::{
 use rxrust::prelude::*;
 
 pub(crate) struct ProcessSpawnDriver {
-    event_sender: LocalSubject<'static, ProcessSpawnDriverEvent, Infallible>,
+    event_sender: LocalSubject<'static, ProcessSpawnEvent, Infallible>,
 }
 
-pub(crate) type ProcessSpawnDriverEvent = Result<Rc<Mutex<Child>>, Rc<std::io::Error>>;
+#[derive(Debug, Clone)]
+pub(crate) struct ProcessSpawnEvent(pub(crate) Result<Rc<Mutex<Child>>, Rc<std::io::Error>>);
 
 #[derive(Debug, Clone)]
 pub(crate) struct ProcessSpawnCommand {
@@ -22,7 +23,7 @@ pub(crate) struct ProcessSpawnCommand {
 
 impl ProcessSpawnDriver {
     pub(crate) fn new() -> (
-        LocalBoxedObservable<'static, ProcessSpawnDriverEvent, Infallible>,
+        LocalBoxedObservable<'static, ProcessSpawnEvent, Infallible>,
         Self,
     ) {
         let event_sender = Local::subject();
@@ -45,7 +46,7 @@ impl ProcessSpawnDriver {
                 .map(|child| Rc::new(Mutex::new(child)))
                 .map_err(Rc::new);
 
-            event_sender.next(result);
+            event_sender.next(ProcessSpawnEvent(result));
         }
     }
 }

@@ -5,15 +5,15 @@ use rxrust::prelude::*;
 use crate::browser::Browser;
 
 pub(crate) struct BrowserSpawnDriver {
-    event_sender: LocalSubject<'static, BrowserSpawnDriverEvent, Infallible>,
+    event_sender: LocalSubject<'static, BrowserSpawnEvent, Infallible>,
 }
 
 #[derive(Debug, Clone)]
-pub(crate) struct BrowserSpawnDriverEvent(pub(crate) Result<Rc<Mutex<Browser>>, Rc<anyhow::Error>>);
+pub(crate) struct BrowserSpawnEvent(pub(crate) Result<Rc<Mutex<Browser>>, Rc<anyhow::Error>>);
 
 impl BrowserSpawnDriver {
     pub(crate) fn new() -> (
-        LocalBoxedObservable<'static, BrowserSpawnDriverEvent, Infallible>,
+        LocalBoxedObservable<'static, BrowserSpawnEvent, Infallible>,
         Self,
     ) {
         let event_sender = Local::subject();
@@ -29,7 +29,7 @@ impl BrowserSpawnDriver {
                 .await
                 .map(|browser| Rc::new(Mutex::new(browser)))
                 .map_err(Rc::new);
-            event_sender.next(BrowserSpawnDriverEvent(result));
+            event_sender.next(BrowserSpawnEvent(result));
         }
     }
 }

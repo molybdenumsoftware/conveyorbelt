@@ -11,11 +11,11 @@ use tracing::info;
 use crate::common::ForStdoutputLine as _;
 
 pub(crate) struct ProcessWaitDriver {
-    event_sender: LocalSubject<'static, ProcessWaitDriverEvent, Infallible>,
+    event_sender: LocalSubject<'static, ProcessWaitEvent, Infallible>,
 }
 
 #[derive(Debug, Clone)]
-pub(crate) enum ProcessWaitDriverEvent {
+pub(crate) enum ProcessWaitEvent {
     Terminated(ExitStatus),
     FailedToWait(Rc<std::io::Error>),
     StderrLine(String),
@@ -27,7 +27,7 @@ pub(crate) struct ProcessWaitCommand(pub(crate) Rc<Mutex<Child>>);
 
 impl ProcessWaitDriver {
     pub(crate) fn new() -> (
-        LocalBoxedObservable<'static, ProcessWaitDriverEvent, Infallible>,
+        LocalBoxedObservable<'static, ProcessWaitEvent, Infallible>,
         Self,
     ) {
         let event_sender = Local::subject();
@@ -59,9 +59,10 @@ impl ProcessWaitDriver {
                 .unwrap();
 
             let event = match child.wait() {
-                Ok(exit_status) => ProcessWaitDriverEvent::Terminated(exit_status),
-                Err(error) => ProcessWaitDriverEvent::FailedToWait(Rc::new(error)),
+                Ok(exit_status) => ProcessWaitEvent::Terminated(exit_status),
+                Err(error) => ProcessWaitEvent::FailedToWait(Rc::new(error)),
             };
+            drop(child);
 
             event_sender.next(event);
         }

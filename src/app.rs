@@ -1,4 +1,11 @@
-use std::{convert::Infallible, path::PathBuf, rc::Rc};
+use std::{
+    convert::Infallible,
+    path::PathBuf,
+    process::{Child, ExitStatus},
+    rc::Rc,
+    sync::Mutex,
+    vec::Vec,
+};
 
 use rxrust::prelude::*;
 use tempfile::TempDir;
@@ -7,32 +14,53 @@ use tracing::info;
 use crate::{
     common::{SERVE_PATH, StateForTesting, TESTING_MODE},
     driver::{
-        browser_spawn::BrowserSpawnDriverEvent,
-        process_spawn::{ProcessSpawnCommand, ProcessSpawnDriverEvent},
-        process_wait::{ProcessWaitCommand, ProcessWaitDriverEvent},
+        browser_spawn::BrowserSpawnEvent,
+        process_spawn::{ProcessSpawnCommand, ProcessSpawnEvent},
+        process_wait::{ProcessWaitCommand, ProcessWaitEvent},
+        server::{Server, ServerSpawnCommand, ServerSpawnEvent},
     },
-    server::ServerPort,
 };
 
-#[derive(Default, Clone)]
+#[derive(Debug, Clone)]
+enum BuildStateTrio {
+    Spawning,
+    Waiting,
+    Succeeded,
+}
+#[derive(Debug, Clone)]
+enum BuildStateDuo {
+    Spawning,
+    Waiting,
+}
+
+#[derive(Debug, Clone)]
+enum ServerSpawnAndInitialBuild {
+    Spawning { initial_build: BuildStateTrio },
+    Spawned { initial_build: BuildStateDuo },
+}
+
+#[derive(Default, Clone, Debug)]
 enum State {
     #[default]
     Initial,
-    InitialBuild,
+    ServerSpawnAndInitialBuild(ServerSpawnAndInitialBuild),
+    SpawningBrowser,
     Idle,
     Building,
 }
 
-#[derive(Debug, Clone)]
-enum InputEvent {
+#[derive(Debug)]
+pub(crate) enum Event {
     Init,
-    ProcessSpawn(ProcessSpawnDriverEvent),
-    ProcessWait(ProcessWaitDriverEvent),
-    BrowserSpawn(BrowserSpawnDriverEvent),
+    ServerSpawn(ServerSpawnEvent),
+    ProcessSpawn(ProcessSpawnEvent),
+    ProcessWait(ProcessWaitEvent),
+    BrowserSpawn(BrowserSpawnEvent),
 }
 
 #[derive(Clone, Debug)]
 pub(crate) enum Command {
+    ServerSpawn(ServerSpawnCommand),
     ProcessSpawn(ProcessSpawnCommand),
     ProcessWait(ProcessWaitCommand),
     BrowserSpawn,
@@ -43,98 +71,80 @@ pub(crate) struct App {
     pub(crate) project_root: PathBuf,
     pub(crate) serve_dir: Rc<TempDir>,
     pub(crate) build_command: PathBuf,
-    pub(crate) server_port: ServerPort,
-    pub(crate) process_spawn_driver_events:
-        LocalBoxedObservable<'static, ProcessSpawnDriverEvent, Infallible>,
-    pub(crate) process_wait_driver_events:
-        LocalBoxedObservable<'static, ProcessWaitDriverEvent, Infallible>,
-    pub(crate) browser_spawn_driver_events:
-        LocalBoxedObservable<'static, BrowserSpawnDriverEvent, Infallible>,
 }
 
 impl App {
-    pub(crate) fn run(self) -> LocalBoxedObservable<'static, Command, Infallible> {
-        Local::merge_observables([
-            self.process_spawn_driver_events
-                .map(InputEvent::ProcessSpawn)
-                .box_it(),
-            self.process_wait_driver_events
-                .map(InputEvent::ProcessWait)
-                .box_it(),
-            self.browser_spawn_driver_events
-                .map(InputEvent::BrowserSpawn)
-                .box_it(),
-        ])
-        .start_with(vec![InputEvent::Init])
-        .scan(
-            (State::default(), Vec::new()),
-            move |(mut state, mut commands), input_event| {
-                info!("event: {input_event:?}");
-                commands.clear();
+    pub(crate) fn run(
+        &self,
+        events: LocalBoxedObservable<'static, Event, Infallible>,
+    ) -> LocalBoxedObservable<'static, Command, Infallible> {
+        events
+            .start_with(vec![Event::Init])
+            .scan((State::default(), Vec::new()), self.scanner())
+            .flat_map(|(_state, commands)| Local::from_iter(commands))
+            .tap(|command| info!("command: {command:?}"))
+            .box_it()
+    }
 
-                match input_event {
-                    InputEvent::Init => {
-                        commands.push(Command::ProcessSpawn(ProcessSpawnCommand {
-                            path: self.build_command.clone(),
+    fn scanner(&self) -> impl Fn((State, Vec<Command>), Event) -> (State, Vec<Command>) + 'static {
+        let build_command = self.build_command.clone();
+        let serve_dir = self.serve_dir.clone();
+        move |(mut state, mut commands), event| {
+            info!("event: {event:?}");
+            commands.clear();
+
+            match (&mut state, event) {
+                (State::Initial, Event::Init) => {
+                    commands.extend([
+                        Command::ServerSpawn(ServerSpawnCommand {
+                            serve_dir: serve_dir.clone(),
+                        }),
+                        Command::ProcessSpawn(ProcessSpawnCommand {
+                            path: build_command.clone(),
                             envs: vec![(
                                 SERVE_PATH.to_string(),
-                                self.serve_dir.path().to_str().unwrap().to_string(),
+                                serve_dir.path().to_str().unwrap().to_string(),
                             )],
-                        }));
-                        state = State::InitialBuild;
-                    }
-                    InputEvent::ProcessSpawn(Ok(child)) => {
-                        // TODO maybe log this
-                        commands.push(Command::ProcessWait(ProcessWaitCommand(child)));
-                    }
-                    InputEvent::ProcessSpawn(Err(_error)) => {
-                        // TODO maybe log this
-                    }
-                    InputEvent::ProcessWait(ProcessWaitDriverEvent::Terminated(exit_status)) => {
-                        if exit_status.success() {
-                            state = State::Idle;
-                            commands.push(Command::BrowserSpawn);
-                        }
-                    }
-                    InputEvent::ProcessWait(ProcessWaitDriverEvent::FailedToWait(_)) => {
-                        // TODO
-                    }
-                    InputEvent::ProcessWait(ProcessWaitDriverEvent::StdoutLine(_)) => {
-                        // TODO
-                    }
-                    InputEvent::ProcessWait(ProcessWaitDriverEvent::StderrLine(_)) => {
-                        // TODO
-                    }
-                    InputEvent::BrowserSpawn(BrowserSpawnDriverEvent(result)) => {
-                        let browser = match result {
-                            Ok(browser) => browser,
-                            Err(_err) => todo!(),
-                        };
-                        if std::env::var(TESTING_MODE).is_ok() {
-                            let mut browser_lock = browser.lock().unwrap();
-                            let browser_pid = match browser_lock.pid() {
-                                Ok(pid) => pid,
-                                Err(_err) => todo!(),
-                            };
-                            let state_for_testing = StateForTesting {
-                                serve_path: self.serve_dir.path().to_path_buf(),
-                                serve_port: self.server_port.0,
-                                browser_debugging_address: browser_lock.debugging_address(),
-                                browser_pid,
-                            };
+                        }),
+                    ]);
+                    state =
+                        State::ServerSpawnAndInitialBuild(ServerSpawnAndInitialBuild::Spawning {
+                            initial_build: BuildStateTrio::Spawning,
+                        });
+                }
 
-                            info!("{state_for_testing:?}");
+                (State::Initial, _) => unreachable!(),
 
-                            commands.push(Command::Stdout(format!("{state_for_testing}\n")));
-                        }
+                (_, Event::Init) => unreachable!(),
+
+                (
+                    State::ServerSpawnAndInitialBuild(ServerSpawnAndInitialBuild::Spawning {
+                        initial_build: initial_build_state @ BuildStateTrio::Spawning,
+                    }),
+                    Event::ProcessSpawn(ProcessSpawnEvent(Ok(child))),
+                ) => {
+                    commands.push(Command::ProcessWait(ProcessWaitCommand(child.clone())));
+                    *initial_build_state = BuildStateTrio::Waiting;
+                }
+                (
+                    State::ServerSpawnAndInitialBuild(ServerSpawnAndInitialBuild::Spawning {
+                        initial_build: initial_build_state @ BuildStateTrio::Waiting,
+                    }),
+                    Event::ProcessWait(ProcessWaitEvent::Terminated(exit_status)),
+                ) => {
+                    if exit_status.success() {
+                        *initial_build_state = BuildStateTrio::Succeeded;
+                    } else {
+                        todo!("process failed")
                     }
                 }
 
-                (state, commands)
-            },
-        )
-        .concat_map(|(_state, commands)| Local::from_iter(commands))
-        .tap(|command| info!("command: {command:?}"))
-        .box_it()
+                (state, event) => {
+                    todo!("unhandled event at state:\n{event:#?}\n{state:#?}")
+                }
+            };
+
+            (state, commands)
+        }
     }
 }
