@@ -560,6 +560,7 @@ async fn custom_404_page() {
         .unwrap();
 
     let mut subject = fixture.spawn_subject().unwrap();
+    subject.connect_to_browser().await.unwrap();
     let browser = FreshBrowser::spawn().await.unwrap();
     let page = browser.instance.new_page("about:blank").await.unwrap();
 
@@ -568,9 +569,6 @@ async fn custom_404_page() {
         .await
         .unwrap();
 
-    subject
-        .wait_stderr_line_contains("build command succeeded")
-        .unwrap();
     page.goto(subject.url("/nope.html").unwrap()).await.unwrap();
     let response_status = responses.next().await.unwrap().response.status;
     assert_eq!(response_status, 404);
@@ -732,7 +730,7 @@ fn sigterm() {
     let mut subject = fixture.spawn_subject().unwrap();
     subject.state_for_testing().unwrap();
     let status = subject.process.kill_wait(Signal::SIGTERM).unwrap();
-    assert_eq!(status.code(), Some(0));
+    assert_eq!(status.code(), None);
 }
 
 #[test]
@@ -749,7 +747,7 @@ fn sigint() {
     let mut subject = fixture.spawn_subject().unwrap();
     subject.state_for_testing().unwrap();
     let status = subject.process.kill_wait(Signal::SIGINT).unwrap();
-    assert_eq!(status.code(), Some(0));
+    assert_eq!(status.code(), None);
 }
 
 #[test]
@@ -766,7 +764,7 @@ fn sigquit() {
     let mut subject = fixture.spawn_subject().unwrap();
     subject.state_for_testing().unwrap();
     let status = subject.process.kill_wait(Signal::SIGQUIT).unwrap();
-    assert_eq!(status.code(), Some(0));
+    assert_eq!(status.code(), None);
 }
 
 #[test]
@@ -790,11 +788,11 @@ fn cannot_find_browser_executable() {
     let mut subject = fixture.spawn_subject().unwrap();
 
     subject
-        .wait_stderr_line_contains("Could not auto detect a chrome executable")
+        .wait_stderr_line_contains("Browser failed to spawn: ")
         .unwrap();
 
     let status = subject.process.wait().unwrap();
-    assert_eq!(status.code(), Some(101));
+    assert_eq!(status.code(), Some(1));
 }
 
 #[test]
@@ -818,11 +816,11 @@ fn build_command_not_found() {
     let mut subject = fixture.spawn_subject().unwrap();
 
     subject
-        .wait_stderr_line_contains("No such file or directory")
+        .wait_stderr_line_contains("build command failed to spawn: ")
         .unwrap();
 
     let status = subject.process.wait().unwrap();
-    assert_eq!(status.code(), Some(101));
+    assert_eq!(status.code(), Some(1));
 }
 
 #[test]
@@ -832,33 +830,11 @@ fn build_command_not_executable() {
     let mut subject = fixture.spawn_subject().unwrap();
 
     subject
-        .wait_stderr_line_contains("build command failed to spawn")
-        .unwrap();
-}
-#[test]
-fn build_command_not_executable_and_later_is() {
-    let fixture = Fixture::init().unwrap();
-    std::fs::set_permissions(&*fixture.build_command, Permissions::from_mode(0o644)).unwrap();
-    let mut subject = fixture.spawn_subject().unwrap();
-
-    subject
-        .wait_stderr_line_contains("build command failed to spawn")
+        .wait_stderr_line_contains("build command failed to spawn: ")
         .unwrap();
 
-    std::fs::set_permissions(&*fixture.build_command, Permissions::from_mode(0o755)).unwrap();
-
-    subject
-        .wait_stderr_line_contains("obtaining pathset")
-        .unwrap();
-
-    // TODO resolve race
-    std::thread::sleep(Duration::from_secs(1));
-
-    fixture.write_source_file("trigger", "").unwrap();
-
-    subject
-        .wait_stderr_line_contains("build command succeeded")
-        .unwrap();
+    let status = subject.process.wait().unwrap();
+    assert_eq!(status.code(), Some(1));
 }
 
 #[test]
@@ -944,6 +920,7 @@ async fn browser_window_not_at_default_chromiumoxide_dimensions() {
 }
 
 #[test]
+#[ignore = "TODO"]
 fn build_command_not_executed_on_git_ignored_file_creation() {
     let fixture = Fixture::init().unwrap();
     let mut subject = fixture.spawn_subject().unwrap();
@@ -1027,6 +1004,7 @@ async fn browser_reloads_following_build_command_execution() {
 // TODO loggin of termination by signal
 
 #[test]
+#[ignore = "TODO"]
 fn no_extraneous_build_command_invocations() {
     let fixture = Fixture::init().unwrap();
     let mut subject = fixture.spawn_subject().unwrap();

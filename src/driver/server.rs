@@ -41,15 +41,11 @@ impl ServerSpawnDriver {
 
     pub(crate) fn effect(&self, command: ServerSpawnCommand) -> impl Future<Output = ()> + 'static {
         let mut event_sender = self.event_sender.clone();
-        dbg!("ServerSpawnDriver::effect");
         async move {
-            dbg!("ServerSpawnDriver::effect asynxc");
             let result = Server::spawn(command.serve_dir.path().to_path_buf())
                 .map(Rc::new)
                 .map_err(Rc::new);
-            dbg!("ServerSpawnDriver::effect asynxc result");
             event_sender.next(ServerSpawnEvent(result));
-            dbg!("ServerSpawnDriver::effect done");
         }
     }
 }
@@ -65,7 +61,6 @@ pub(crate) struct ServerPort(pub(crate) u16);
 
 impl Server {
     fn spawn(path: PathBuf) -> anyhow::Result<Self> {
-        dbg!("Server::spawn");
         let handler_opts = RequestHandlerOpts {
             root_dir: path.clone(),
             compression: false,
@@ -108,14 +103,12 @@ impl Server {
         let failed_to_create_server_msg =
             format!("failed to create hyper server from listener {listener:?}");
 
-        dbg!("creating server_task");
         let server_task = hyper::Server::from_tcp(listener)
             .context(failed_to_create_server_msg)?
             .tcp_nodelay(true)
             .serve(RouterService::new(RequestHandler {
                 opts: Arc::from(handler_opts),
             }));
-        dbg!("created server_task");
 
         Ok(Self {
             port: ServerPort(server_task.local_addr().port()),

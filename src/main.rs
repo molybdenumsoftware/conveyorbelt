@@ -17,8 +17,9 @@ use crate::{
     app::{App, Command, Event},
     cli::Args,
     driver::{
-        browser_spawn::BrowserSpawnDriver, process_spawn::ProcessSpawnDriver,
-        process_wait::ProcessWaitDriver, server::ServerSpawnDriver,
+        browser_spawn::BrowserSpawnDriver, fswatch::FsWatchDriver,
+        process_spawn::ProcessSpawnDriver, process_wait::ProcessWaitDriver,
+        server::ServerSpawnDriver,
     },
 };
 
@@ -40,6 +41,7 @@ async fn async_main() -> anyhow::Result<()> {
     let (server_spawn_events, server_spawn_driver) = ServerSpawnDriver::new();
     let (process_spawn_events, process_spawn_driver) = ProcessSpawnDriver::new();
     let (browser_spawn_events, browser_spawn_driver) = BrowserSpawnDriver::new();
+    let (fs_watch_events, fs_watch_driver) = FsWatchDriver::new();
     let (process_wait_events, process_wait_driver) = ProcessWaitDriver::new();
 
     let app = App {
@@ -53,31 +55,35 @@ async fn async_main() -> anyhow::Result<()> {
         process_spawn_events.map(Event::ProcessSpawn).box_it(),
         process_wait_events.map(Event::ProcessWait).box_it(),
         browser_spawn_events.map(Event::BrowserSpawn).box_it(),
+        fs_watch_events.map(Event::FsWatch).box_it(),
     ])
     .box_it();
 
     // map(f).merge_all(usize::MAX)
-    let effect_stream = app.run(input_events).flat_map(move |command| {
+    let effect_stream = app.run(input_events).concat_map(move |command| {
         let effect = match command {
             Command::ServerSpawn(command) => server_spawn_driver.effect(command).boxed_local(),
             Command::ProcessSpawn(command) => process_spawn_driver.effect(command).boxed_local(),
             Command::ProcessWait(command) => process_wait_driver.effect(command).boxed_local(),
             Command::BrowserSpawn => browser_spawn_driver.effect().boxed_local(),
-            Command::Stdout(string) => async move { print!("{string}") }.boxed_local(),
+            Command::FsWatch(command) => fs_watch_driver.effect(command).boxed_local(),
+            Command::Stdout(string) => async move {
+                print!("{string}");
+            }
+            .boxed_local(),
+            Command::Stderr(string) => async move {
+                eprint!("{string}");
+            }
+            .boxed_local(),
+            Command::Terminate(exit_code) => {
+                async move { std::process::exit(exit_code) }.boxed_local()
+            }
         };
 
         Local::from_future(effect)
     });
-    // .merge_all(usize::MAX);
 
     effect_stream.delay(Duration::ZERO).subscribe(|_| {});
-
-    // Basic usage - flatten nested observables
-    // let mut result = Vec::new();
-    // Local::from_iter([Local::from_iter([1, 2]), Local::from_iter([3, 4])])
-    //   .merge_all(usize::MAX)
-    //   .subscribe(|v| result.push(v));
-    // assert_eq!(result, vec![1, 2, 3, 4]);
 
     std::future::pending::<()>().await;
     Ok(())
