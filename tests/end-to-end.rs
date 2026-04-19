@@ -810,7 +810,7 @@ fn not_inside_a_git_work_tree() {
 }
 
 #[test]
-fn build_command_not_found() {
+fn initial_build_command_not_found() {
     let fixture = Fixture::init().unwrap();
     std::fs::remove_file(&*fixture.build_command).unwrap();
     let mut subject = fixture.spawn_subject().unwrap();
@@ -824,6 +824,10 @@ fn build_command_not_found() {
 }
 
 #[test]
+#[ignore = "TODO"]
+fn subsequent_build_command_failed_to_spawn() {}
+
+#[test]
 fn build_command_not_executable() {
     let fixture = Fixture::init().unwrap();
     std::fs::set_permissions(&*fixture.build_command, Permissions::from_mode(0o644)).unwrap();
@@ -831,6 +835,22 @@ fn build_command_not_executable() {
 
     subject
         .wait_stderr_line_contains("build command failed to spawn: ")
+        .unwrap();
+
+    let status = subject.process.wait().unwrap();
+    assert_eq!(status.code(), Some(1));
+}
+
+#[test]
+fn initial_build_fail() {
+    let mut fixture = Fixture::init().unwrap();
+
+    fixture.build_command("exit 1").unwrap();
+
+    let mut subject = fixture.spawn_subject().unwrap();
+
+    subject
+        .wait_stderr_line_contains("initial build failed")
         .unwrap();
 
     let status = subject.process.wait().unwrap();

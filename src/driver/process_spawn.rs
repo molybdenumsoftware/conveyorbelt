@@ -2,18 +2,17 @@ use std::{
     convert::Infallible,
     path::PathBuf,
     process::{Child, Command, Stdio},
-    rc::Rc,
-    sync::Mutex,
+    sync::{Arc, Mutex},
 };
 
 use rxrust::prelude::*;
 
 pub(crate) struct ProcessSpawnDriver {
-    event_sender: LocalSubject<'static, ProcessSpawnEvent, Infallible>,
+    event_sender: SharedSubject<'static, ProcessSpawnEvent, Infallible>,
 }
 
 #[derive(Debug, Clone)]
-pub(crate) struct ProcessSpawnEvent(pub(crate) Result<Rc<Mutex<Child>>, Rc<std::io::Error>>);
+pub(crate) struct ProcessSpawnEvent(pub(crate) Result<Arc<Mutex<Child>>, Arc<std::io::Error>>);
 
 #[derive(Debug, Clone)]
 pub(crate) struct ProcessSpawnCommand {
@@ -23,10 +22,10 @@ pub(crate) struct ProcessSpawnCommand {
 
 impl ProcessSpawnDriver {
     pub(crate) fn new() -> (
-        LocalBoxedObservable<'static, ProcessSpawnEvent, Infallible>,
+        SharedBoxedObservable<'static, ProcessSpawnEvent, Infallible>,
         Self,
     ) {
-        let event_sender = Local::subject();
+        let event_sender = Shared::subject();
         let event_stream = event_sender.clone().box_it();
         let driver = Self { event_sender };
         (event_stream, driver)
@@ -43,8 +42,8 @@ impl ProcessSpawnDriver {
                 .stdout(Stdio::piped())
                 .stderr(Stdio::piped())
                 .spawn()
-                .map(|child| Rc::new(Mutex::new(child)))
-                .map_err(Rc::new);
+                .map(|child| Arc::new(Mutex::new(child)))
+                .map_err(Arc::new);
 
             event_sender.next(ProcessSpawnEvent(result));
         }

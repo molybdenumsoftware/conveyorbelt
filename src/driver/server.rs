@@ -2,7 +2,6 @@ use std::{
     convert::Infallible,
     net::{IpAddr, Ipv4Addr, SocketAddr, TcpListener},
     path::PathBuf,
-    rc::Rc,
     sync::Arc,
 };
 
@@ -18,22 +17,22 @@ use tracing::info;
 
 #[derive(Debug, Clone)]
 pub(crate) struct ServerSpawnCommand {
-    pub(crate) serve_dir: Rc<TempDir>,
+    pub(crate) serve_dir: Arc<TempDir>,
 }
 
 #[derive(Debug, Clone)]
-pub(crate) struct ServerSpawnEvent(pub(crate) Result<Rc<Server>, Rc<anyhow::Error>>);
+pub(crate) struct ServerSpawnEvent(pub(crate) Result<Arc<Server>, Arc<anyhow::Error>>);
 
 pub(crate) struct ServerSpawnDriver {
-    event_sender: LocalSubject<'static, ServerSpawnEvent, Infallible>,
+    event_sender: SharedSubject<'static, ServerSpawnEvent, Infallible>,
 }
 
 impl ServerSpawnDriver {
     pub(crate) fn new() -> (
-        LocalBoxedObservable<'static, ServerSpawnEvent, Infallible>,
+        SharedBoxedObservable<'static, ServerSpawnEvent, Infallible>,
         Self,
     ) {
-        let event_sender = Local::subject();
+        let event_sender = Shared::subject();
         let event_stream = event_sender.clone().box_it();
         let driver = Self { event_sender };
         (event_stream, driver)
@@ -43,8 +42,8 @@ impl ServerSpawnDriver {
         let mut event_sender = self.event_sender.clone();
         async move {
             let result = Server::spawn(command.serve_dir.path().to_path_buf())
-                .map(Rc::new)
-                .map_err(Rc::new);
+                .map(Arc::new)
+                .map_err(Arc::new);
             event_sender.next(ServerSpawnEvent(result));
         }
     }

@@ -1,5 +1,11 @@
-use std::{convert::Infallible, path::PathBuf, rc::Rc, sync::Mutex, vec::Vec};
+use std::{
+    convert::Infallible,
+    path::PathBuf,
+    sync::{Arc, Mutex},
+    vec::Vec,
+};
 
+use notify::INotifyWatcher;
 use rxrust::prelude::*;
 use tempfile::TempDir;
 use tracing::info;
@@ -19,8 +25,8 @@ use crate::{
 #[derive(Debug, Clone)]
 enum ServerSpawnAndInitialBuild {
     Nothing,
-    ServerRunning(Rc<Server>),
-    ServerRunningAndBuildWaiting(Rc<Server>),
+    ServerRunning(Arc<Server>),
+    ServerRunningAndBuildWaiting(Arc<Server>),
     BuildWaiting,
     BuildSucceeded,
 }
@@ -31,16 +37,31 @@ enum State {
     Initial,
     ServerSpawnAndInitialBuild(ServerSpawnAndInitialBuild),
     SpawningBrowser {
-        server: Rc<Server>,
+        server: Arc<Server>,
+    },
+    InitializingFsWatch {
+        server: Arc<Server>,
+        browser: Arc<Mutex<Browser>>,
     },
     Idle {
-        server: Rc<Server>,
-        browser: Rc<Mutex<Browser>>,
+        server: Arc<Server>,
+        browser: Arc<Mutex<Browser>>,
+        watcher: Arc<Mutex<INotifyWatcher>>,
     },
-    Building,
+    BuildCommandSpawning {
+        server: Arc<Server>,
+        browser: Arc<Mutex<Browser>>,
+        watcher: Arc<Mutex<INotifyWatcher>>,
+    },
+    BuildCommandWaiting {
+        server: Arc<Server>,
+        browser: Arc<Mutex<Browser>>,
+        watcher: Arc<Mutex<INotifyWatcher>>,
+    },
+    Terminating(i32),
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub(crate) enum Event {
     Init,
     ServerSpawn(ServerSpawnEvent),
@@ -64,19 +85,19 @@ pub(crate) enum Command {
 
 pub(crate) struct App {
     pub(crate) project_root: PathBuf,
-    pub(crate) serve_dir: Rc<TempDir>,
+    pub(crate) serve_dir: Arc<TempDir>,
     pub(crate) build_command: PathBuf,
 }
 
 impl App {
     pub(crate) fn run(
         &self,
-        events: LocalBoxedObservable<'static, Event, Infallible>,
-    ) -> LocalBoxedObservable<'static, Command, Infallible> {
+        events: SharedBoxedObservable<'static, Event, Infallible>,
+    ) -> SharedBoxedObservable<'static, Command, Infallible> {
         events
             .start_with(vec![Event::Init])
             .scan((State::default(), Vec::new()), self.scanner())
-            .flat_map(|(_state, commands)| Local::from_iter(commands))
+            .flat_map(|(_state, commands)| Shared::from_iter(commands))
             .tap(|command| info!("command: {command:?}"))
             .box_it()
     }
@@ -85,6 +106,13 @@ impl App {
         let build_command = self.build_command.clone();
         let serve_dir = self.serve_dir.clone();
         let project_root = self.project_root.clone();
+        let process_spawn_command = ProcessSpawnCommand {
+            path: build_command.clone(),
+            envs: vec![(
+                SERVE_PATH.to_string(),
+                serve_dir.path().to_str().unwrap().to_string(),
+            )],
+        };
 
         move |(mut state, mut commands), event| {
             info!("event: {event:?}");
@@ -96,13 +124,7 @@ impl App {
                         Command::ServerSpawn(ServerSpawnCommand {
                             serve_dir: serve_dir.clone(),
                         }),
-                        Command::ProcessSpawn(ProcessSpawnCommand {
-                            path: build_command.clone(),
-                            envs: vec![(
-                                SERVE_PATH.to_string(),
-                                serve_dir.path().to_str().unwrap().to_string(),
-                            )],
-                        }),
+                        Command::ProcessSpawn(process_spawn_command.clone()),
                     ]);
                     state = State::ServerSpawnAndInitialBuild(ServerSpawnAndInitialBuild::Nothing);
                 }
@@ -126,10 +148,12 @@ impl App {
                     ),
                     Event::ProcessSpawn(ProcessSpawnEvent(Err(error))),
                 ) => {
+                    const CODE: i32 = 1;
                     commands.extend([
                         Command::Stderr(format!("build command failed to spawn: {error}\n")),
-                        Command::Terminate(1),
+                        Command::Terminate(CODE),
                     ]);
+                    state = State::Terminating(CODE)
                 }
                 (
                     State::ServerSpawnAndInitialBuild(
@@ -143,8 +167,8 @@ impl App {
                 }
                 (
                     State::ServerSpawnAndInitialBuild(ServerSpawnAndInitialBuild::BuildWaiting),
-                    Event::ProcessWait(ProcessWaitEvent::Terminated(exit_status)),
-                ) if exit_status.success() => {
+                    Event::ProcessWait(ProcessWaitEvent::TerminatedSuccessfully),
+                ) => {
                     state = State::ServerSpawnAndInitialBuild(
                         ServerSpawnAndInitialBuild::BuildSucceeded,
                     )
@@ -195,12 +219,26 @@ impl App {
                     State::ServerSpawnAndInitialBuild(
                         ServerSpawnAndInitialBuild::ServerRunningAndBuildWaiting(server),
                     ),
-                    Event::ProcessWait(ProcessWaitEvent::Terminated(exit_status)),
-                ) if exit_status.success() => {
+                    Event::ProcessWait(ProcessWaitEvent::TerminatedSuccessfully),
+                ) => {
                     commands.push(Command::BrowserSpawn);
                     state = State::SpawningBrowser {
                         server: server.clone(),
                     };
+                }
+                (
+                    State::ServerSpawnAndInitialBuild(
+                        ServerSpawnAndInitialBuild::BuildWaiting
+                        | ServerSpawnAndInitialBuild::ServerRunningAndBuildWaiting(_),
+                    ),
+                    Event::ProcessWait(ProcessWaitEvent::TerminatedWithFailure),
+                ) => {
+                    const CODE: i32 = 1;
+                    commands.extend([
+                        Command::Stderr("initial build failed".into()),
+                        Command::Terminate(CODE),
+                    ]);
+                    state = State::Terminating(CODE);
                 }
                 (
                     State::SpawningBrowser { server },
@@ -217,7 +255,7 @@ impl App {
                         commands.push(Command::Stdout(format!("{state_for_testing}\n")));
                     }
                     commands.push(Command::FsWatch(FsWatchCommand::Init(project_root.clone())));
-                    state = State::Idle {
+                    state = State::InitializingFsWatch {
                         server: server.clone(),
                         browser,
                     };
@@ -226,13 +264,114 @@ impl App {
                     State::SpawningBrowser { .. },
                     Event::BrowserSpawn(BrowserSpawnEvent(Err(error))),
                 ) => {
+                    const CODE: i32 = 1;
                     commands.extend([
                         Command::Stderr(format!("Browser failed to spawn: {error}")),
-                        Command::Terminate(1),
+                        Command::Terminate(CODE),
                     ]);
+                    state = State::Terminating(CODE);
                 }
                 (_, Event::BrowserSpawn(_)) => {
                     unreachable!();
+                }
+                (
+                    State::InitializingFsWatch { server, browser },
+                    Event::FsWatch(FsWatchEvent::Watching(watcher)),
+                ) => {
+                    state = State::Idle {
+                        server: server.clone(),
+                        browser: browser.clone(),
+                        watcher,
+                    }
+                }
+                (_, Event::FsWatch(FsWatchEvent::Watching(_))) => {
+                    unreachable!();
+                }
+                (
+                    State::Idle {
+                        server,
+                        browser,
+                        watcher,
+                    }
+                    | State::BuildCommandSpawning {
+                        server,
+                        browser,
+                        watcher,
+                    }
+                    | State::BuildCommandWaiting {
+                        server,
+                        browser,
+                        watcher,
+                    },
+                    Event::FsWatch(FsWatchEvent::Event(notify::Event {
+                        kind:
+                            notify::EventKind::Create(_)
+                            | notify::EventKind::Modify(_)
+                            | notify::EventKind::Remove(_),
+                        paths,
+                        ..
+                    })),
+                ) => {
+                    commands.push(Command::ProcessSpawn(process_spawn_command.clone()));
+                    state = State::BuildCommandSpawning {
+                        server: server.clone(),
+                        browser: browser.clone(),
+                        watcher: watcher.clone(),
+                    };
+                }
+                (
+                    State::Idle {
+                        server,
+                        browser,
+                        watcher,
+                    }
+                    | State::BuildCommandSpawning {
+                        server,
+                        browser,
+                        watcher,
+                    }
+                    | State::BuildCommandWaiting {
+                        server,
+                        browser,
+                        watcher,
+                    },
+                    Event::FsWatch(FsWatchEvent::Event(_)),
+                ) => {}
+                (state, event @ Event::FsWatch(FsWatchEvent::Event(_))) => {
+                    dbg!(state, event);
+                    unreachable!();
+                }
+                (
+                    State::BuildCommandSpawning {
+                        server,
+                        browser,
+                        watcher,
+                    },
+                    Event::ProcessSpawn(ProcessSpawnEvent(Ok(child))),
+                ) => {
+                    commands.push(Command::ProcessWait(ProcessWaitCommand(child)));
+                    state = State::BuildCommandWaiting {
+                        server: server.clone(),
+                        browser: browser.clone(),
+                        watcher: watcher.clone(),
+                    };
+                }
+                (_, Event::ProcessSpawn(_)) => {
+                    unreachable!();
+                }
+                (
+                    State::BuildCommandWaiting {
+                        server,
+                        browser,
+                        watcher,
+                    },
+                    Event::ProcessWait(ProcessWaitEvent::TerminatedSuccessfully),
+                ) => {
+                    state = State::Idle {
+                        server: server.clone(),
+                        browser: browser.clone(),
+                        watcher: watcher.clone(),
+                    };
                 }
 
                 (state, event) => {

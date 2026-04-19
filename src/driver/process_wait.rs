@@ -1,8 +1,7 @@
 use std::{
     convert::Infallible,
-    process::{Child, ExitStatus},
-    rc::Rc,
-    sync::Mutex,
+    process::Child,
+    sync::{Arc, Mutex},
 };
 
 use rxrust::prelude::*;
@@ -11,26 +10,27 @@ use tracing::info;
 use crate::common::ForStdoutputLine as _;
 
 pub(crate) struct ProcessWaitDriver {
-    event_sender: LocalSubject<'static, ProcessWaitEvent, Infallible>,
+    event_sender: SharedSubject<'static, ProcessWaitEvent, Infallible>,
 }
 
 #[derive(Debug, Clone)]
 pub(crate) enum ProcessWaitEvent {
-    Terminated(ExitStatus),
-    FailedToWait(Rc<std::io::Error>),
+    FailedToWait(Arc<std::io::Error>),
     StderrLine(String),
     StdoutLine(String),
+    TerminatedSuccessfully,
+    TerminatedWithFailure,
 }
 
 #[derive(Debug, Clone)]
-pub(crate) struct ProcessWaitCommand(pub(crate) Rc<Mutex<Child>>);
+pub(crate) struct ProcessWaitCommand(pub(crate) Arc<Mutex<Child>>);
 
 impl ProcessWaitDriver {
     pub(crate) fn new() -> (
-        LocalBoxedObservable<'static, ProcessWaitEvent, Infallible>,
+        SharedBoxedObservable<'static, ProcessWaitEvent, Infallible>,
         Self,
     ) {
-        let event_sender = Local::subject();
+        let event_sender = Shared::subject();
         let event_stream = event_sender.clone().box_it();
 
         let driver = Self { event_sender };
@@ -59,8 +59,11 @@ impl ProcessWaitDriver {
                 .unwrap();
 
             let event = match child.wait() {
-                Ok(exit_status) => ProcessWaitEvent::Terminated(exit_status),
-                Err(error) => ProcessWaitEvent::FailedToWait(Rc::new(error)),
+                Ok(exit_status) => match exit_status.success() {
+                    true => ProcessWaitEvent::TerminatedSuccessfully,
+                    false => ProcessWaitEvent::TerminatedWithFailure,
+                },
+                Err(error) => ProcessWaitEvent::FailedToWait(Arc::new(error)),
             };
             drop(child);
 
