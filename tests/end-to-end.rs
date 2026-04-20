@@ -10,7 +10,6 @@ use std::{
     path::{Path, PathBuf},
     process::{ExitStatus, Stdio},
     sync::{Arc, Mutex},
-    time::Duration,
     vec::Vec,
 };
 
@@ -25,14 +24,12 @@ use chromiumoxide::{
 use futures::StreamExt as _;
 use indoc::formatdoc;
 use maud::{DOCTYPE, html};
-use nix::sys::signal::Signal;
+use nix::{sys::signal::Signal, unistd::Pid};
 use sysinfo::{ProcessRefreshKind, RefreshKind};
 use tempfile::{NamedTempFile, TempDir, TempPath};
 use tokio::task::JoinHandle;
 
-use crate::common::{
-    DroppyChild, ForStdoutputLine as _, SERVE_PATH, Signalable as _, StateForTesting, TESTING_MODE,
-};
+use crate::common::{ForStdoutputLine as _, SERVE_PATH, StateForTesting, TESTING_MODE};
 
 pub(crate) trait KillWait {
     fn kill_wait(&mut self, signal: Signal) -> anyhow::Result<ExitStatus>;
@@ -43,6 +40,58 @@ impl KillWait for std::process::Child {
         self.signal(signal)?;
         let status = self.wait()?;
         Ok(status)
+    }
+}
+
+#[derive(Debug)]
+pub(crate) struct DroppyChild(Option<std::process::Child>);
+
+impl DroppyChild {
+    pub(crate) fn new(child: std::process::Child) -> Self {
+        Self(Some(child))
+    }
+}
+
+impl std::ops::Deref for DroppyChild {
+    type Target = std::process::Child;
+
+    fn deref(&self) -> &Self::Target {
+        self.0.as_ref().unwrap()
+    }
+}
+
+impl std::ops::DerefMut for DroppyChild {
+    fn deref_mut(&mut self) -> &mut Self::Target {
+        self.0.as_mut().unwrap()
+    }
+}
+
+impl Drop for DroppyChild {
+    fn drop(&mut self) {
+        let Some(mut inner) = self.0.take() else {
+            return;
+        };
+        if let Err(e) = inner.signal(Signal::SIGTERM) {
+            eprintln!("Failed to signal dropped child: {e}");
+            return;
+        }
+        let Ok(status) = inner.wait() else { return };
+        if status.success() {
+            return;
+        }
+        eprintln!("Dropped child terminated with {status}")
+    }
+}
+
+pub(crate) trait Signalable {
+    fn signal(&self, signal: Signal) -> anyhow::Result<()>;
+}
+
+impl Signalable for std::process::Child {
+    fn signal(&self, signal: Signal) -> anyhow::Result<()> {
+        let pid = Pid::from_raw(self.id().try_into()?);
+        nix::sys::signal::kill(pid, signal)?;
+        Ok(())
     }
 }
 

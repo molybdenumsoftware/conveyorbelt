@@ -13,7 +13,7 @@ pub(crate) enum FsWatchCommand {
 }
 
 #[derive(Debug, Clone)]
-pub(crate) enum FsWatchEvent {
+pub(crate) enum FsEvent {
     WatcherCreationError(Arc<notify::Error>),
     Watching(Arc<Mutex<INotifyWatcher>>),
     WatcherWatchError(Arc<notify::Error>),
@@ -22,14 +22,11 @@ pub(crate) enum FsWatchEvent {
 }
 
 pub(crate) struct FsWatchDriver {
-    event_sender: SharedSubject<'static, FsWatchEvent, Infallible>,
+    event_sender: SharedSubject<'static, FsEvent, Infallible>,
 }
 
 impl FsWatchDriver {
-    pub(crate) fn new() -> (
-        SharedBoxedObservable<'static, FsWatchEvent, Infallible>,
-        Self,
-    ) {
+    pub(crate) fn new() -> (SharedBoxedObservable<'static, FsEvent, Infallible>, Self) {
         let event_sender = Shared::subject();
         let event_stream = event_sender.clone().box_it();
         let driver = Self { event_sender };
@@ -43,30 +40,29 @@ impl FsWatchDriver {
             FsWatchCommand::Init(path_buf) => {
                 let event_handler = move |event| {
                     let fs_watch_event = match event {
-                        Ok(event) => FsWatchEvent::Event(event),
-                        Err(error) => FsWatchEvent::EventError(Arc::new(error)),
+                        Ok(event) => FsEvent::Event(event),
+                        Err(error) => FsEvent::EventError(Arc::new(error)),
                     };
                     event_sender_clone.next(fs_watch_event)
                 };
                 async move {
-                    let mut watcher = match notify::recommended_watcher(event_handler) {
+                    let watcher = match notify::recommended_watcher(event_handler) {
                         Ok(watcher) => watcher,
                         Err(error) => {
-                            event_sender.next(FsWatchEvent::WatcherCreationError(Arc::new(error)));
+                            event_sender.next(FsEvent::WatcherCreationError(Arc::new(error)));
                             return;
                         }
                     };
                     let watcher = Arc::new(Mutex::new(watcher));
 
-                    event_sender.next(FsWatchEvent::Watching(watcher.clone()));
+                    event_sender.next(FsEvent::Watching(watcher.clone()));
 
                     if let Err(error) = watcher
                         .lock()
                         .unwrap()
                         .watch(&path_buf, RecursiveMode::Recursive)
                     {
-                        event_sender.next(FsWatchEvent::WatcherWatchError(Arc::new(error)));
-                        return;
+                        event_sender.next(FsEvent::WatcherWatchError(Arc::new(error)));
                     }
                 }
             }

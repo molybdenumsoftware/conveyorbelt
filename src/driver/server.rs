@@ -15,10 +15,8 @@ use static_web_server::{
 use tempfile::TempDir;
 use tracing::info;
 
-#[derive(Debug, Clone)]
-pub(crate) struct ServerSpawnCommand {
-    pub(crate) serve_dir: Arc<TempDir>,
-}
+#[derive(Debug, Clone, derive_more::Deref)]
+pub(crate) struct ServeDir(pub(crate) Arc<TempDir>);
 
 #[derive(Debug, Clone)]
 pub(crate) struct ServerSpawnEvent(pub(crate) Result<Arc<Server>, Arc<anyhow::Error>>);
@@ -38,10 +36,10 @@ impl ServerSpawnDriver {
         (event_stream, driver)
     }
 
-    pub(crate) fn effect(&self, command: ServerSpawnCommand) -> impl Future<Output = ()> + 'static {
+    pub(crate) fn effect(&self, command: ServeDir) -> impl Future<Output = ()> + 'static {
         let mut event_sender = self.event_sender.clone();
         async move {
-            let result = Server::spawn(command.serve_dir.path().to_path_buf())
+            let result = Server::spawn(command.0.path().to_path_buf())
                 .map(Arc::new)
                 .map_err(Arc::new);
             event_sender.next(ServerSpawnEvent(result));
