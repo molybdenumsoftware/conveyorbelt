@@ -8,7 +8,8 @@ use tracing::debug;
 use crate::common::TESTING_MODE;
 
 #[derive(Debug)]
-pub(crate) struct Browser(&'static mut chromiumoxide::Browser);
+//pub(crate) struct Browser(&'static mut chromiumoxide::Browser);
+pub(crate) struct Browser(chromiumoxide::Browser);
 
 impl Browser {
     pub(crate) async fn init() -> anyhow::Result<Self> {
@@ -36,7 +37,8 @@ impl Browser {
             .await
             .context("failed to launch browser")?;
 
-        Ok(Self(Box::leak(Box::new(browser))))
+        //Ok(Self(Box::leak(Box::new(browser))))
+        Ok(Self(browser))
     }
 
     pub(crate) fn pid(&mut self) -> anyhow::Result<u32> {

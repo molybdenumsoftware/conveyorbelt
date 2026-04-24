@@ -8,8 +8,6 @@ mod logging;
 mod project_path;
 mod serve_dir;
 
-use std::sync::Arc;
-
 use futures::{FutureExt as _, StreamExt};
 use rxrust::prelude::*;
 
@@ -17,10 +15,10 @@ use crate::{
     app::{App, Command, Event},
     cli::Args,
     driver::{
-        browser_spawn::BrowserSpawnDriver,
+        browser::BrowserDriver,
         build::BuildDriver,
         fswatch::FsWatchDriver,
-        server::{ServeDir, ServerSpawnDriver},
+        server::{ServeDir, ServerDriver},
     },
 };
 
@@ -36,31 +34,31 @@ async fn async_main() -> anyhow::Result<()> {
     logging::init();
     let Args { build_command } = crate::cli::parse();
 
-    let serve_dir = ServeDir(Arc::new(crate::serve_dir::obtain()?));
+    let serve_dir = ServeDir(crate::serve_dir::obtain()?);
     let project_root = crate::project_path::resolve(&std::env::current_dir()?)?;
 
-    let (server_spawn_events, server_spawn_driver) = ServerSpawnDriver::new();
+    let (server_spawn_events, server_spawn_driver) = ServerDriver::new();
     let (build_events, build_driver) = BuildDriver::new();
-    let (browser_spawn_events, browser_spawn_driver) = BrowserSpawnDriver::new();
+    let (browser_spawn_events, browser_spawn_driver) = BrowserDriver::new();
     let (fs_watch_events, fs_watch_driver) = FsWatchDriver::new();
 
     let app = App {
         project_root,
         serve_dir,
-        build_command,
+        build_command_path: build_command,
     };
 
     let input_events = Shared::merge_observables([
-        server_spawn_events.map(Event::ServerSpawn).box_it(),
+        server_spawn_events.map(Event::Server).box_it(),
         build_events.map(Event::Build).box_it(),
-        browser_spawn_events.map(Event::BrowserSpawn).box_it(),
+        browser_spawn_events.map(Event::Browser).box_it(),
         fs_watch_events.map(Event::Fs).box_it(),
     ])
     .box_it();
 
     app.run(input_events)
         .map(move |command| match command {
-            Command::ServerSpawn(command) => Some(server_spawn_driver.effect(command).boxed()),
+            Command::Server(command) => Some(server_spawn_driver.effect(command).boxed()),
             Command::Build(command) => Some(build_driver.effect(command).boxed()),
             Command::BrowserSpawn => Some(browser_spawn_driver.effect().boxed()),
             Command::FsWatch(command) => Some(fs_watch_driver.effect(command).boxed()),

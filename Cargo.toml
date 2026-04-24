@@ -48,6 +48,11 @@ default-features = false
 features = ["tokio1"]
 version = "*"
 
+[dependencies.replace_with]
+default-features = false
+features = ["std"]
+version = "*"
+
 [dependencies.rxrust]
 default-features = false
 features = ["scheduler"]
@@ -72,6 +77,10 @@ version = "*"
 [dependencies.tokio]
 default-features = false
 features = ["io-util", "process"]
+version = "*"
+
+[dependencies.tokio-stream]
+default-features = false
 version = "*"
 
 [dependencies.tracing]

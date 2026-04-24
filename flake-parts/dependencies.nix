@@ -21,6 +21,7 @@ in
         "serde_json"
         "static-web-server"
         "tempfile"
+        "tokio-stream"
         "tracing"
         "watchexec"
         "watchexec-events"
@@ -43,6 +44,7 @@ in
         process-wrap = {
           features = [ "tokio1" ];
         };
+        replace_with.features = [ "std" ];
         rxrust = {
           features = [ "scheduler" ];
           version = "1.0.0-rc.3";

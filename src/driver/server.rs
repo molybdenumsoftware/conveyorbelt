@@ -13,36 +13,61 @@ use static_web_server::{
     service::RouterService,
 };
 use tempfile::TempDir;
+use tokio_stream::wrappers::ReceiverStream;
 use tracing::info;
 
-#[derive(Debug, Clone, derive_more::Deref)]
-pub(crate) struct ServeDir(pub(crate) Arc<TempDir>);
+#[derive(Debug, derive_more::Deref)]
+pub(crate) struct ServeDir(pub(crate) TempDir);
 
-#[derive(Debug, Clone)]
-pub(crate) struct ServerSpawnEvent(pub(crate) Result<Arc<Server>, Arc<anyhow::Error>>);
-
-pub(crate) struct ServerSpawnDriver {
-    event_sender: SharedSubject<'static, ServerSpawnEvent, Infallible>,
+#[derive(Debug)]
+pub(crate) enum ServerCommand {
+    Spawn(ServeDir),
+    Terminate(Server),
 }
 
-impl ServerSpawnDriver {
+#[derive(Debug)]
+pub(crate) enum ServerEvent {
+    SpawnError(anyhow::Error),
+    SpawnSuccess(Server),
+    TerminationSuccess,
+    TerminationError(hyper::Error),
+    TerminationJoinError(tokio::task::JoinError),
+}
+
+pub(crate) struct ServerDriver {
+    event_sender: tokio::sync::mpsc::Sender<ServerEvent>,
+}
+
+impl ServerDriver {
     pub(crate) fn new() -> (
-        SharedBoxedObservable<'static, ServerSpawnEvent, Infallible>,
+        SharedBoxedObservable<'static, ServerEvent, Infallible>,
         Self,
     ) {
-        let event_sender = Shared::subject();
-        let event_stream = event_sender.clone().box_it();
+        let (event_sender, event_receiver) = tokio::sync::mpsc::channel(0);
         let driver = Self { event_sender };
-        (event_stream, driver)
+        (
+            Shared::from_stream(ReceiverStream::new(event_receiver)).box_it(),
+            driver,
+        )
     }
 
-    pub(crate) fn effect(&self, command: ServeDir) -> impl Future<Output = ()> + 'static {
-        let mut event_sender = self.event_sender.clone();
+    pub(crate) fn effect(&self, command: ServerCommand) -> impl Future<Output = ()> + 'static {
+        let event_sender = self.event_sender.clone();
         async move {
-            let result = Server::spawn(command.0.path().to_path_buf())
-                .map(Arc::new)
-                .map_err(Arc::new);
-            event_sender.next(ServerSpawnEvent(result));
+            let event = match command {
+                ServerCommand::Spawn(serve_dir) => {
+                    match Server::spawn(serve_dir.path().to_path_buf()) {
+                        Ok(server) => ServerEvent::SpawnSuccess(server),
+                        Err(error) => ServerEvent::SpawnError(error),
+                    }
+                }
+                ServerCommand::Terminate(server) => match server.join_handle.await {
+                    Ok(Ok(())) => ServerEvent::TerminationSuccess,
+                    Ok(Err(error)) => ServerEvent::TerminationError(error),
+                    Err(join_error) => ServerEvent::TerminationJoinError(join_error),
+                },
+            };
+            event_sender.send(event).await.unwrap();
         }
     }
 }
