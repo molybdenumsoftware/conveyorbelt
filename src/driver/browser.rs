@@ -1,4 +1,4 @@
-use std::convert::Infallible;
+use std::{convert::Infallible, net::SocketAddr};
 
 use rxrust::prelude::*;
 use tokio_stream::wrappers::ReceiverStream;
@@ -10,9 +10,17 @@ pub(crate) struct BrowserDriver {
 }
 
 #[derive(Debug)]
+pub(crate) enum BrowserCommand {
+    Spawn(SocketAddr),
+    Reload(Browser),
+}
+
+#[derive(Debug)]
 pub(crate) enum BrowserEvent {
     SpawnSuccess(Browser),
     SpawnError(anyhow::Error),
+    ReloadSuccess(Browser),
+    ReloadError(Browser, anyhow::Error),
 }
 
 impl BrowserDriver {
@@ -20,7 +28,7 @@ impl BrowserDriver {
         SharedBoxedObservable<'static, BrowserEvent, Infallible>,
         Self,
     ) {
-        let (event_sender, event_receiver) = tokio::sync::mpsc::channel(0);
+        let (event_sender, event_receiver) = tokio::sync::mpsc::channel(1);
         let driver = Self { event_sender };
         (
             Shared::from_stream(ReceiverStream::new(event_receiver)).box_it(),
@@ -28,13 +36,18 @@ impl BrowserDriver {
         )
     }
 
-    pub(crate) fn effect(&self) -> impl Future<Output = ()> + 'static {
+    pub(crate) fn effect(&self, command: BrowserCommand) -> impl Future<Output = ()> + 'static {
         let event_sender = self.event_sender.clone();
         async move {
-            let result = Browser::init().await;
-            let event = match result {
-                Ok(browser) => BrowserEvent::SpawnSuccess(browser),
-                Err(error) => BrowserEvent::SpawnError(error),
+            let event = match command {
+                BrowserCommand::Spawn(port) => match Browser::init(port).await {
+                    Ok(browser) => BrowserEvent::SpawnSuccess(browser),
+                    Err(error) => BrowserEvent::SpawnError(error),
+                },
+                BrowserCommand::Reload(browser) => match browser.reload().await {
+                    Ok(_) => BrowserEvent::ReloadSuccess(browser),
+                    Err(error) => BrowserEvent::ReloadError(browser, error),
+                },
             };
             event_sender.send(event).await.unwrap();
         }

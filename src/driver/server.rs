@@ -13,15 +13,24 @@ use static_web_server::{
     service::RouterService,
 };
 use tempfile::TempDir;
+use tokio::sync::mpsc;
 use tokio_stream::wrappers::ReceiverStream;
 use tracing::info;
 
 #[derive(Debug, derive_more::Deref)]
-pub(crate) struct ServeDir(pub(crate) TempDir);
+pub(crate) struct ServeDir(TempDir);
+
+impl ServeDir {
+    pub(crate) fn obtain() -> anyhow::Result<Self> {
+        let temp_dir = TempDir::new()?;
+        info!("serve path: {temp_dir:?}");
+        Ok(Self(temp_dir))
+    }
+}
 
 #[derive(Debug)]
 pub(crate) enum ServerCommand {
-    Spawn(ServeDir),
+    Spawn(Arc<ServeDir>),
     Terminate(Server),
 }
 
@@ -35,7 +44,7 @@ pub(crate) enum ServerEvent {
 }
 
 pub(crate) struct ServerDriver {
-    event_sender: tokio::sync::mpsc::Sender<ServerEvent>,
+    event_sender: mpsc::Sender<ServerEvent>,
 }
 
 impl ServerDriver {
@@ -43,7 +52,7 @@ impl ServerDriver {
         SharedBoxedObservable<'static, ServerEvent, Infallible>,
         Self,
     ) {
-        let (event_sender, event_receiver) = tokio::sync::mpsc::channel(0);
+        let (event_sender, event_receiver) = mpsc::channel(1);
         let driver = Self { event_sender };
         (
             Shared::from_stream(ReceiverStream::new(event_receiver)).box_it(),
@@ -75,11 +84,8 @@ impl ServerDriver {
 #[derive(Debug)]
 pub(crate) struct Server {
     join_handle: tokio::task::JoinHandle<hyper::Result<()>>,
-    port: ServerPort,
+    address: SocketAddr,
 }
-
-#[derive(Debug, Clone, Copy)]
-pub(crate) struct ServerPort(pub(crate) u16);
 
 impl Server {
     fn spawn(path: PathBuf) -> anyhow::Result<Self> {
@@ -133,12 +139,12 @@ impl Server {
             }));
 
         Ok(Self {
-            port: ServerPort(server_task.local_addr().port()),
             join_handle: tokio::spawn(server_task),
+            address,
         })
     }
 
-    pub(crate) fn port(&self) -> ServerPort {
-        self.port
+    pub(crate) fn address(&self) -> SocketAddr {
+        self.address
     }
 }

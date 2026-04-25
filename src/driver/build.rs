@@ -2,25 +2,26 @@ use std::{
     convert::Infallible,
     path::PathBuf,
     process::{Command, Stdio},
-    sync::Arc,
 };
 
 use rxrust::prelude::*;
+use tokio::sync::mpsc;
+use tokio_stream::wrappers::ReceiverStream;
 
 use crate::common::ForStdoutputLine as _;
 
 pub(crate) struct BuildDriver {
-    event_sender: SharedSubject<'static, BuildEvent, Infallible>,
+    event_sender: mpsc::Sender<BuildEvent>,
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug)]
 pub(crate) enum BuildEvent {
-    SpawnError(Arc<std::io::Error>),
+    SpawnError(std::io::Error),
     Stdoutln(String),
     Stderrln(String),
     TerminatedSuccessfully,
     TerminatedWithFailure,
-    WaitError(Arc<std::io::Error>),
+    WaitError(std::io::Error),
 }
 
 #[derive(Debug, Clone)]
@@ -31,14 +32,16 @@ pub(crate) struct BuildCommand {
 
 impl BuildDriver {
     pub(crate) fn new() -> (SharedBoxedObservable<'static, BuildEvent, Infallible>, Self) {
-        let event_sender = Shared::subject();
-        let event_stream = event_sender.clone().box_it();
+        let (event_sender, event_receiver) = mpsc::channel(1);
         let driver = Self { event_sender };
-        (event_stream, driver)
+        (
+            Shared::from_stream(ReceiverStream::new(event_receiver)).box_it(),
+            driver,
+        )
     }
 
     pub(crate) fn effect(&self, command: BuildCommand) -> impl Future<Output = ()> + 'static {
-        let mut event_sender = self.event_sender.clone();
+        let event_sender = self.event_sender.clone();
         async move {
             let spawn_result = Command::new(command.path.clone())
                 .envs(command.envs.clone())
@@ -49,26 +52,33 @@ impl BuildDriver {
             let mut child = match spawn_result {
                 Ok(child) => child,
                 Err(error) => {
-                    event_sender.next(BuildEvent::SpawnError(Arc::new(error)));
+                    event_sender
+                        .send(BuildEvent::SpawnError(error))
+                        .await
+                        .unwrap();
                     return;
                 }
             };
 
-            let mut event_sender_clone = event_sender.clone();
+            let event_sender_clone = event_sender.clone();
             child
                 .for_stdout_line(move |line| {
-                    event_sender_clone.next(BuildEvent::Stdoutln(format!(
-                        "build command stdout: {line}"
-                    )));
+                    event_sender_clone
+                        .blocking_send(BuildEvent::Stdoutln(format!(
+                            "build command stdout: {line}"
+                        )))
+                        .unwrap();
                 })
                 .unwrap();
 
-            let mut event_sender_clone = event_sender.clone();
+            let event_sender_clone = event_sender.clone();
             child
                 .for_stderr_line(move |line| {
-                    event_sender_clone.next(BuildEvent::Stderrln(format!(
-                        "build command stderr: {line}"
-                    )));
+                    event_sender_clone
+                        .blocking_send(BuildEvent::Stderrln(format!(
+                            "build command stderr: {line}"
+                        )))
+                        .unwrap();
                 })
                 .unwrap();
 
@@ -77,10 +87,10 @@ impl BuildDriver {
                     true => BuildEvent::TerminatedSuccessfully,
                     false => BuildEvent::TerminatedWithFailure,
                 },
-                Err(error) => BuildEvent::WaitError(Arc::new(error)),
+                Err(error) => BuildEvent::WaitError(error),
             };
 
-            event_sender.next(wait_event);
+            event_sender.send(wait_event).await.unwrap();
         }
     }
 }

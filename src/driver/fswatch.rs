@@ -1,5 +1,6 @@
 use notify::{INotifyWatcher, RecursiveMode, Watcher as _};
 use rxrust::prelude::*;
+use tokio::sync::mpsc;
 use tokio_stream::wrappers::ReceiverStream;
 
 use std::{convert::Infallible, path::PathBuf};
@@ -19,12 +20,12 @@ pub(crate) enum FsEvent {
 }
 
 pub(crate) struct FsWatchDriver {
-    event_sender: tokio::sync::mpsc::Sender<FsEvent>,
+    event_sender: mpsc::Sender<FsEvent>,
 }
 
 impl FsWatchDriver {
     pub(crate) fn new() -> (SharedBoxedObservable<'static, FsEvent, Infallible>, Self) {
-        let (event_sender, event_receiver) = tokio::sync::mpsc::channel(0);
+        let (event_sender, event_receiver) = mpsc::channel(1);
         let driver = Self { event_sender };
         (
             Shared::from_stream(ReceiverStream::new(event_receiver)).box_it(),
