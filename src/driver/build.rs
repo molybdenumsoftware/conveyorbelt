@@ -81,9 +81,10 @@ impl BuildDriver {
                     let event_sender = event_sender_clone.clone();
                     async move {
                         event_sender
-                            .blocking_send(BuildEvent::Stderrln(format!(
+                            .send(BuildEvent::Stderrln(format!(
                                 "build command stderr: {line}"
                             )))
+                            .await
                             .unwrap();
                     }
                     .boxed()
@@ -97,8 +98,6 @@ impl BuildDriver {
                 },
                 Err(error) => BuildEvent::WaitError(error),
             };
-
-            dbg!(&wait_event);
 
             // TODO await concurrently
             stderr_join_handle.await.unwrap();

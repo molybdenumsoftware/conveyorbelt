@@ -50,7 +50,6 @@ impl ForStdoutputLine for std::process::Child {
             while let Some(Ok(line)) = child_stderr_lines.next() {
                 f(&line);
             }
-            dbg!("stderr end");
         });
 
         Some(join_handle)
@@ -67,7 +66,6 @@ impl ForStdoutputLine for std::process::Child {
             while let Some(Ok(line)) = child_stdout_lines.next() {
                 f(&line);
             }
-            dbg!("stdout end");
         });
 
         Some(join_handle)
