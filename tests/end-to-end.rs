@@ -198,7 +198,8 @@ impl Subject {
     async fn connect_to_browser(&mut self) -> anyhow::Result<Browser> {
         let state_for_testing = self.state_for_testing()?;
         let (browser, handler) =
-            Browser::connect_with_config(state_for_testing.browser_debugging_address, state).await?;
+            Browser::connect_with_config(state_for_testing.browser_debugging_address, state)
+                .await?;
 
         tokio::spawn(async move {
             handler
@@ -585,8 +586,6 @@ async fn launched_browser_has_one_page_at_served_root() {
     let fixture = Fixture::init().unwrap();
     let mut subject = fixture.spawn_subject().unwrap();
     let browser = subject.connect_to_browser().await.unwrap();
-    dbg!(&browser);
-    dbg!(&browser.create_browser_context(params))
     let mut pages = browser.pages().await.unwrap();
     assert_eq!(pages.len(), 1);
     let page = pages.pop().unwrap();

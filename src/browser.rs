@@ -1,7 +1,7 @@
 use std::time::Duration;
 
 use anyhow::{Context as _, anyhow};
-use chromiumoxide::BrowserConfig;
+use chromiumoxide::{BrowserConfig, cdp::browser_protocol::browser::BrowserContextId};
 use futures::StreamExt;
 use tempfile::tempdir;
 use tracing::debug;
@@ -42,6 +42,8 @@ impl Browser {
             .await
             .context("failed to launch browser")?;
 
+        let context = handler.default_browser_context().clone();
+
         tokio::spawn(handler.for_each(|_result| async {
             // TODO handle these
         }));
@@ -54,10 +56,6 @@ impl Browser {
             .context("failed to obtain browser pid")?;
 
         let page = browser.new_page(address).await.context("creating page")?;
-
-        let pages = browser.pages().await.unwrap();
-
-        dbg!(pages);
 
         Ok(Self {
             handle: Box::leak(Box::new(browser)),
@@ -77,5 +75,9 @@ impl Browser {
     pub(crate) async fn reload(&self) -> anyhow::Result<()> {
         self.page.reload().await.context("reloading")?;
         Ok(())
+    }
+
+    pub(crate) fn context_id(&self) -> BrowserContextId {
+        self.handle.config().unwrap().
     }
 }

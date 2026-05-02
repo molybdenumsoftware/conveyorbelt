@@ -11,8 +11,8 @@ pub(crate) const SERVE_PATH: &str = env!("SERVE_PATH");
 pub(crate) struct StateForTesting {
     pub(crate) serve_path: PathBuf,
     pub(crate) serve_port: u16,
-    pub(crate) browser_debugging_address: String,
     pub(crate) browser_pid: u32,
+    pub(crate) browser_debugging_address: String,
     pub(crate) browser_context_id: BrowserContextId,
 }
 
