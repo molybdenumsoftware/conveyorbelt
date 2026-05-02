@@ -580,9 +580,16 @@ fn browser_orphaned() {
 }
 
 #[tokio::test]
-#[ignore = "TODO"]
 async fn launched_browser_has_one_page_at_served_root() {
-    todo!()
+    let fixture = Fixture::init().unwrap();
+    let mut subject = fixture.spawn_subject().unwrap();
+    let browser = subject.connect_to_browser().await.unwrap();
+    let mut pages = browser.pages().await.unwrap();
+    assert_eq!(pages.len(), 1);
+    let page = pages.pop().unwrap();
+    let url = page.url().await.unwrap().unwrap();
+    let expected = subject.url("/").unwrap();
+    assert_eq!(url, expected);
 }
 
 #[tokio::test]
@@ -877,7 +884,7 @@ fn initial_build_command_not_found() {
 fn subsequent_build_command_failed_to_spawn() {}
 
 #[test]
-fn build_command_not_executable() {
+fn initial_build_command_not_executable() {
     let fixture = Fixture::init().unwrap();
     std::fs::set_permissions(&*fixture.build_command, Permissions::from_mode(0o644)).unwrap();
     let mut subject = fixture.spawn_subject().unwrap();
