@@ -1,5 +1,6 @@
 use std::{convert::Infallible, path::PathBuf, process::Stdio};
 
+use futures::FutureExt;
 use rxrust::prelude::*;
 use tokio::{process::Command, sync::mpsc};
 use tokio_stream::wrappers::ReceiverStream;
@@ -59,22 +60,33 @@ impl BuildDriver {
             let event_sender_clone = event_sender.clone();
             let stdout_join_handle = child
                 .for_stdout_line(move |line| {
-                    event_sender_clone
-                        .blocking_send(BuildEvent::Stdoutln(format!(
-                            "build command stdout: {line}"
-                        )))
-                        .unwrap();
+                    let line = line.to_owned();
+                    let event_sender = event_sender_clone.clone();
+                    async move {
+                        event_sender
+                            .send(BuildEvent::Stdoutln(format!(
+                                "build command stdout: {line}"
+                            )))
+                            .await
+                            .unwrap();
+                    }
+                    .boxed()
                 })
                 .unwrap();
 
             let event_sender_clone = event_sender.clone();
             let stderr_join_handle = child
                 .for_stderr_line(move |line| {
-                    event_sender_clone
-                        .blocking_send(BuildEvent::Stderrln(format!(
-                            "build command stderr: {line}"
-                        )))
-                        .unwrap();
+                    let line = line.to_owned();
+                    let event_sender = event_sender_clone.clone();
+                    async move {
+                        event_sender
+                            .blocking_send(BuildEvent::Stderrln(format!(
+                                "build command stderr: {line}"
+                            )))
+                            .unwrap();
+                    }
+                    .boxed()
                 })
                 .unwrap();
 
