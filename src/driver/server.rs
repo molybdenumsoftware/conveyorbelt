@@ -13,7 +13,10 @@ use static_web_server::{
     service::RouterService,
 };
 use tempfile::TempDir;
-use tokio::sync::mpsc;
+use tokio::{
+    sync::{mpsc, oneshot},
+    task::JoinHandle,
+};
 use tokio_stream::wrappers::ReceiverStream;
 use tracing::info;
 
@@ -70,7 +73,7 @@ impl ServerDriver {
                         Err(error) => ServerEvent::SpawnError(error),
                     }
                 }
-                ServerCommand::Terminate(server) => match server.join_handle.await {
+                ServerCommand::Terminate(server) => match server.shutdown().await {
                     Ok(Ok(())) => ServerEvent::TerminationSuccess,
                     Ok(Err(error)) => ServerEvent::TerminationError(error),
                     Err(join_error) => ServerEvent::TerminationJoinError(join_error),
@@ -83,8 +86,9 @@ impl ServerDriver {
 
 #[derive(Debug)]
 pub(crate) struct Server {
-    join_handle: tokio::task::JoinHandle<hyper::Result<()>>,
     address: SocketAddr,
+    shutdown_sender: oneshot::Sender<()>,
+    join_handle: JoinHandle<hyper::Result<()>>,
 }
 
 impl Server {
@@ -131,20 +135,31 @@ impl Server {
         let failed_to_create_server_msg =
             format!("failed to create hyper server from listener {listener:?}");
 
+        let address = listener.local_addr()?;
+        let (shutdown_sender, shutdown_signal) = oneshot::channel();
         let server_task = hyper::Server::from_tcp(listener)
             .context(failed_to_create_server_msg)?
             .tcp_nodelay(true)
             .serve(RouterService::new(RequestHandler {
                 opts: Arc::from(handler_opts),
-            }));
+            }))
+            .with_graceful_shutdown(async move {
+                shutdown_signal.await.unwrap();
+            });
 
         Ok(Self {
             join_handle: tokio::spawn(server_task),
             address,
+            shutdown_sender,
         })
     }
 
     pub(crate) fn address(&self) -> SocketAddr {
         self.address
+    }
+
+    async fn shutdown(self) -> Result<Result<(), hyper::Error>, tokio::task::JoinError> {
+        self.shutdown_sender.send(()).unwrap();
+        self.join_handle.await
     }
 }

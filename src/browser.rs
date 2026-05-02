@@ -1,7 +1,8 @@
-use std::{net::SocketAddr, time::Duration};
+use std::time::Duration;
 
 use anyhow::{Context as _, anyhow};
 use chromiumoxide::BrowserConfig;
+use futures::StreamExt;
 use tempfile::tempdir;
 use tracing::debug;
 
@@ -16,7 +17,7 @@ pub(crate) struct Browser {
 }
 
 impl Browser {
-    pub(crate) async fn init(address: SocketAddr) -> anyhow::Result<Self> {
+    pub(crate) async fn init(address: String) -> anyhow::Result<Self> {
         let browser_data_dir = tempdir().context("failed to create temporary browser data dir")?;
 
         debug!("browser data dir: {browser_data_dir:?}");
@@ -37,9 +38,13 @@ impl Browser {
 
         debug!("browser config: {browser_config:?}");
 
-        let (mut browser, _handler) = chromiumoxide::Browser::launch(browser_config)
+        let (mut browser, handler) = chromiumoxide::Browser::launch(browser_config)
             .await
             .context("failed to launch browser")?;
+
+        tokio::spawn(handler.for_each(|_result| async {
+            // TODO handle these
+        }));
 
         let pid = browser
             .get_mut_child()
@@ -48,10 +53,7 @@ impl Browser {
             .id()
             .context("failed to obtain browser pid")?;
 
-        let page = browser
-            .new_page(address.to_string())
-            .await
-            .context("creating page")?;
+        let page = browser.new_page(address).await.context("creating page")?;
 
         Ok(Self {
             handle: Box::leak(Box::new(browser)),

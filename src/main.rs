@@ -70,6 +70,7 @@ async fn async_main() -> anyhow::Result<()> {
                 .boxed(),
             ),
             Command::Eprintln(string) => Some(
+                // TODO well, what's the difference between tracing and this?
                 async move {
                     eprintln!("{string}");
                 }

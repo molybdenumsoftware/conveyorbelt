@@ -23,70 +23,81 @@ impl std::fmt::Display for StateForTesting {
 pub(crate) const TESTING_MODE: &str = "_TESTING_MODE";
 
 pub(crate) trait ForStdoutputLine {
-    fn for_stderr_line(&mut self, f: impl FnMut(&str) + Send + 'static) -> Option<()>;
-    fn for_stdout_line(&mut self, f: impl FnMut(&str) + Send + 'static) -> Option<()>;
+    type JoinHandle;
+    fn for_stderr_line(&mut self, f: impl FnMut(&str) + Send + 'static)
+    -> Option<Self::JoinHandle>;
+    fn for_stdout_line(&mut self, f: impl FnMut(&str) + Send + 'static)
+    -> Option<Self::JoinHandle>;
 }
 
 impl ForStdoutputLine for std::process::Child {
-    fn for_stderr_line(&mut self, mut f: impl FnMut(&str) + Send + 'static) -> Option<()> {
+    type JoinHandle = std::thread::JoinHandle<()>;
+    fn for_stderr_line(
+        &mut self,
+        mut f: impl FnMut(&str) + Send + 'static,
+    ) -> Option<Self::JoinHandle> {
         let child_stderr = self.stderr.take()?;
         let mut child_stderr_lines = std::io::BufReader::new(child_stderr).lines();
 
-        std::thread::spawn(move || {
-            loop {
-                if let Some(Ok(line)) = child_stderr_lines.next() {
-                    f(&line);
-                }
+        let join_handle = std::thread::spawn(move || {
+            while let Some(Ok(line)) = child_stderr_lines.next() {
+                f(&line);
             }
+            dbg!("stderr end");
         });
 
-        Some(())
+        Some(join_handle)
     }
 
-    fn for_stdout_line(&mut self, mut f: impl FnMut(&str) + Send + 'static) -> Option<()> {
+    fn for_stdout_line(
+        &mut self,
+        mut f: impl FnMut(&str) + Send + 'static,
+    ) -> Option<Self::JoinHandle> {
         let child_stdout = self.stdout.take()?;
         let mut child_stdout_lines = std::io::BufReader::new(child_stdout).lines();
 
-        std::thread::spawn(move || {
-            loop {
-                if let Some(Ok(line)) = child_stdout_lines.next() {
-                    f(&line);
-                }
+        let join_handle = std::thread::spawn(move || {
+            while let Some(Ok(line)) = child_stdout_lines.next() {
+                f(&line);
             }
+            dbg!("stdout end");
         });
 
-        Some(())
+        Some(join_handle)
     }
 }
 
 impl ForStdoutputLine for tokio::process::Child {
-    fn for_stderr_line(&mut self, mut f: impl FnMut(&str) + Send + 'static) -> Option<()> {
+    type JoinHandle = tokio::task::JoinHandle<()>;
+    fn for_stderr_line(
+        &mut self,
+        mut f: impl FnMut(&str) + Send + 'static,
+    ) -> Option<Self::JoinHandle> {
         let child_stderr = self.stderr.take()?;
         let mut stderr_lines = tokio::io::BufReader::new(child_stderr).lines();
 
-        tokio::spawn(async move {
-            loop {
-                if let Ok(Some(line)) = stderr_lines.next_line().await {
-                    f(&line);
-                };
+        let join_handle = tokio::spawn(async move {
+            while let Ok(Some(line)) = stderr_lines.next_line().await {
+                f(&line);
             }
         });
 
-        Some(())
+        Some(join_handle)
     }
 
-    fn for_stdout_line(&mut self, mut f: impl FnMut(&str) + Send + 'static) -> Option<()> {
+    fn for_stdout_line(
+        &mut self,
+        mut f: impl FnMut(&str) + Send + 'static,
+    ) -> Option<Self::JoinHandle> {
         let child_stdout = self.stdout.take()?;
         let mut stdout_lines = tokio::io::BufReader::new(child_stdout).lines();
 
-        tokio::spawn(async move {
-            loop {
-                if let Ok(Some(line)) = stdout_lines.next_line().await {
-                    f(&line);
-                };
+        let join_handle = tokio::spawn(async move {
+            while let Ok(Some(line)) = stdout_lines.next_line().await {
+                f(&line);
             }
         });
 
-        Some(())
+        Some(join_handle)
     }
 }

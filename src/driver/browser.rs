@@ -1,4 +1,4 @@
-use std::{convert::Infallible, net::SocketAddr};
+use std::convert::Infallible;
 
 use rxrust::prelude::*;
 use tokio_stream::wrappers::ReceiverStream;
@@ -11,7 +11,7 @@ pub(crate) struct BrowserDriver {
 
 #[derive(Debug)]
 pub(crate) enum BrowserCommand {
-    Spawn(SocketAddr),
+    Spawn { url: String },
     Reload(Browser),
 }
 
@@ -38,9 +38,10 @@ impl BrowserDriver {
 
     pub(crate) fn effect(&self, command: BrowserCommand) -> impl Future<Output = ()> + 'static {
         let event_sender = self.event_sender.clone();
+
         async move {
             let event = match command {
-                BrowserCommand::Spawn(port) => match Browser::init(port).await {
+                BrowserCommand::Spawn { url: address } => match Browser::init(address).await {
                     Ok(browser) => BrowserEvent::SpawnSuccess(browser),
                     Err(error) => BrowserEvent::SpawnError(error),
                 },

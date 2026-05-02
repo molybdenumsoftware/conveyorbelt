@@ -61,7 +61,7 @@ impl BuildDriver {
             };
 
             let event_sender_clone = event_sender.clone();
-            child
+            let stdout_join_handle = child
                 .for_stdout_line(move |line| {
                     event_sender_clone
                         .blocking_send(BuildEvent::Stdoutln(format!(
@@ -72,7 +72,7 @@ impl BuildDriver {
                 .unwrap();
 
             let event_sender_clone = event_sender.clone();
-            child
+            let stderr_join_handle = child
                 .for_stderr_line(move |line| {
                     event_sender_clone
                         .blocking_send(BuildEvent::Stderrln(format!(
@@ -89,6 +89,11 @@ impl BuildDriver {
                 },
                 Err(error) => BuildEvent::WaitError(error),
             };
+
+            dbg!(&wait_event);
+
+            stderr_join_handle.join().unwrap();
+            stdout_join_handle.join().unwrap();
 
             event_sender.send(wait_event).await.unwrap();
         }
