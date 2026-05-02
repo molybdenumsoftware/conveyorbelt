@@ -220,7 +220,7 @@ impl Subject {
         ))
     }
 
-    fn wait_stderr_line_contains(&mut self, pat: &str) -> anyhow::Result<String> {
+    fn wait_stderr_line_contains(&mut self, pat: impl AsRef<str>) -> anyhow::Result<String> {
         loop {
             let mut stderr_lock = self.stderr.lock().map_err(|e| anyhow!("{e}"))?;
 
@@ -236,7 +236,7 @@ impl Subject {
                 .take(line_feed_index)
                 .collect::<String>();
 
-            if line.contains(pat) {
+            if line.contains(pat.as_ref()) {
                 return Ok(line);
             }
         }
@@ -584,15 +584,18 @@ async fn launched_browser_has_one_page_at_served_root() {
     let fixture = Fixture::init().unwrap();
     let mut subject = fixture.spawn_subject().unwrap();
     let browser = subject.connect_to_browser().await.unwrap();
+    let url = subject.url("/").unwrap();
+
     subject
-        .wait_stderr_line_contains("browser started loading ")
+        .wait_stderr_line_contains(format!("browser started loading {url}"))
         .unwrap();
+
     let mut pages = browser.pages().await.unwrap();
     assert_eq!(pages.len(), 1);
     let page = pages.pop().unwrap();
-    let url = page.url().await.unwrap().unwrap();
+    let actual = page.url().await.unwrap().unwrap();
     let expected = subject.url("/").unwrap();
-    assert_eq!(url, expected);
+    assert_eq!(actual, expected);
 }
 
 #[tokio::test]
