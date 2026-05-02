@@ -1,5 +1,6 @@
 use std::{io::BufRead as _, path::PathBuf};
 
+use futures::future::LocalBoxFuture;
 use serde::{Deserialize, Serialize};
 use tokio::io::AsyncBufReadExt as _;
 
@@ -25,25 +26,22 @@ pub(crate) const TESTING_MODE: &str = "_TESTING_MODE";
 pub(crate) trait ForStdoutputLine {
     type JoinHandle;
     type Return;
-    fn for_stderr_line(&mut self, f: impl FnMut(&str) -> Self::Return + Send + 'static)
-    -> Option<Self::JoinHandle>;
-    fn for_stdout_line(&mut self, f: impl FnMut(&str) + Send + 'static)
-    -> Option<Self::JoinHandle>;
-}
-pub(crate) trait ForStdoutputLineAsync {
     fn for_stderr_line(
         &mut self,
-        f: impl FnMut(&str) + Send + 'static,
-    ) -> Option<tokio::task::JoinHandle<()>;
-    fn for_stdout_line(&mut self, f: impl FnMut(&str) + Send + 'static)
-    -> Option<>;
+        f: impl (FnMut(&str) -> Self::Return) + Send + 'static,
+    ) -> Option<Self::JoinHandle>;
+    fn for_stdout_line(
+        &mut self,
+        f: impl (FnMut(&str) -> Self::Return) + Send + 'static,
+    ) -> Option<Self::JoinHandle>;
 }
 
 impl ForStdoutputLine for std::process::Child {
     type JoinHandle = std::thread::JoinHandle<()>;
+    type Return = ();
     fn for_stderr_line(
         &mut self,
-        mut f: impl FnMut(&str) + Send + 'static,
+        mut f: impl (FnMut(&str) -> Self::Return) + Send + 'static,
     ) -> Option<Self::JoinHandle> {
         let child_stderr = self.stderr.take()?;
         let mut child_stderr_lines = std::io::BufReader::new(child_stderr).lines();
@@ -78,6 +76,7 @@ impl ForStdoutputLine for std::process::Child {
 
 impl ForStdoutputLine for tokio::process::Child {
     type JoinHandle = tokio::task::JoinHandle<()>;
+    type Return = LocalBoxFuture<Output = ()>;
     fn for_stderr_line(
         &mut self,
         mut f: impl FnMut(&str) + Send + 'static,
