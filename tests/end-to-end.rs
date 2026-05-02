@@ -20,6 +20,7 @@ use chromiumoxide::{
         browser::{GetWindowBoundsParams, GetWindowForTargetParams},
         network::EventResponseReceived,
     },
+    handler::HandlerConfig,
 };
 use futures::StreamExt as _;
 use indoc::formatdoc;
@@ -197,8 +198,14 @@ impl DBusSession {
 impl Subject {
     async fn connect_to_browser(&mut self) -> anyhow::Result<Browser> {
         let state_for_testing = self.state_for_testing()?;
+
+        let config = HandlerConfig {
+            context_ids: vec![state_for_testing.browser_context_id],
+            ..Default::default()
+        };
+
         let (browser, handler) =
-            Browser::connect_with_config(state_for_testing.browser_debugging_address, state)
+            Browser::connect_with_config(state_for_testing.browser_debugging_address, config)
                 .await?;
 
         tokio::spawn(async move {

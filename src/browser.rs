@@ -43,12 +43,6 @@ impl Browser {
             .await
             .context("failed to launch browser")?;
 
-        let context_id = handler
-            .default_browser_context()
-            .id()
-            .context("obtaining default context id")?
-            .clone();
-
         tokio::spawn(handler.for_each(|_result| async {
             // TODO handle these
         }));
@@ -59,6 +53,8 @@ impl Browser {
             .as_mut_inner()
             .id()
             .context("failed to obtain browser pid")?;
+
+        let context_id = browser.create_browser_context(Default::default()).await?;
 
         let page = browser.new_page(address).await.context("creating page")?;
 
