@@ -1111,3 +1111,7 @@ fn no_extraneous_build_command_invocations() {
 
     assert_eq!(fixture.build_command_invocation_count().unwrap(), 2);
 }
+
+#[test]
+#[ignore = "TODO"]
+fn cdp_errors_are_reported() {}

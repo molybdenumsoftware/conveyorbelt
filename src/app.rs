@@ -534,4 +534,23 @@ impl App {
             v @ (_, Event::Fs(_)) => unreachable!("{v:?}"),
         })
     }
+
+    // TODO
+    // fn event_init(self, state: State) -> (Vec<Command>, State) {
+    //     match state {
+    //         State::Blank => (
+    //             vec![
+    //                 Command::Build(self.build_command.clone()),
+    //                 Command::Server(ServerCommand::Spawn(self.serve_dir.clone())),
+    //                 Command::FsWatch(FsWatchCommand::Init(self.project_root.clone())),
+    //             ],
+    //             State::Initializing {
+    //                 initial_build: InitialBuildState::Pending,
+    //                 server: None,
+    //                 watcher: None,
+    //             },
+    //         ),
+    //         _ => unreachable!(),
+    //     }
+    // }
 }
