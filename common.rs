@@ -24,10 +24,19 @@ pub(crate) const TESTING_MODE: &str = "_TESTING_MODE";
 
 pub(crate) trait ForStdoutputLine {
     type JoinHandle;
-    fn for_stderr_line(&mut self, f: impl FnMut(&str) + Send + 'static)
+    type Return;
+    fn for_stderr_line(&mut self, f: impl FnMut(&str) -> Self::Return + Send + 'static)
     -> Option<Self::JoinHandle>;
     fn for_stdout_line(&mut self, f: impl FnMut(&str) + Send + 'static)
     -> Option<Self::JoinHandle>;
+}
+pub(crate) trait ForStdoutputLineAsync {
+    fn for_stderr_line(
+        &mut self,
+        f: impl FnMut(&str) + Send + 'static,
+    ) -> Option<tokio::task::JoinHandle<()>;
+    fn for_stdout_line(&mut self, f: impl FnMut(&str) + Send + 'static)
+    -> Option<>;
 }
 
 impl ForStdoutputLine for std::process::Child {
