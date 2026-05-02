@@ -584,6 +584,9 @@ async fn launched_browser_has_one_page_at_served_root() {
     let fixture = Fixture::init().unwrap();
     let mut subject = fixture.spawn_subject().unwrap();
     let browser = subject.connect_to_browser().await.unwrap();
+    subject
+        .wait_stderr_line_contains("browser started loading ")
+        .unwrap();
     let mut pages = browser.pages().await.unwrap();
     assert_eq!(pages.len(), 1);
     let page = pages.pop().unwrap();
