@@ -12,6 +12,7 @@ use crate::common::TESTING_MODE;
 //pub(crate) struct Browser(&'static mut chromiumoxide::Browser);
 pub(crate) struct Browser {
     handle: &'static chromiumoxide::Browser,
+    context_id: BrowserContextId,
     pid: u32,
     page: chromiumoxide::Page,
 }
@@ -42,7 +43,11 @@ impl Browser {
             .await
             .context("failed to launch browser")?;
 
-        let context = handler.default_browser_context().clone();
+        let context_id = handler
+            .default_browser_context()
+            .id()
+            .context("obtaining default context id")?
+            .clone();
 
         tokio::spawn(handler.for_each(|_result| async {
             // TODO handle these
@@ -59,6 +64,7 @@ impl Browser {
 
         Ok(Self {
             handle: Box::leak(Box::new(browser)),
+            context_id,
             pid,
             page,
         })
@@ -77,7 +83,7 @@ impl Browser {
         Ok(())
     }
 
-    pub(crate) fn context_id(&self) -> BrowserContextId {
-        self.handle.config().unwrap().
+    pub(crate) fn context_id(&self) -> &BrowserContextId {
+        &self.context_id
     }
 }

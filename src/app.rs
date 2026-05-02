@@ -1,6 +1,5 @@
 use std::{convert::Infallible, path::PathBuf, sync::Arc, vec::Vec};
 
-use chromiumoxide::cdp::browser_protocol::browser::BrowserContextId;
 use notify::INotifyWatcher;
 use rxrust::prelude::*;
 use tracing::info;
@@ -317,7 +316,7 @@ impl App {
                         serve_path: self.serve_dir.path().to_path_buf(),
                         serve_port: server.address().port(),
                         browser_debugging_address: browser.debugging_address(),
-                        browser_context_id: browser.context_id(),
+                        browser_context_id: browser.context_id().clone(),
                         browser_pid: browser.pid(),
                     };
                     vec![Command::Println(format!("{state_for_testing}"))]
@@ -399,7 +398,7 @@ impl App {
                 vec![Command::Browser(BrowserCommand::Reload(browser))],
                 State::Reloading { server, watcher },
             ),
-            v @ (_, Event::Build(_)) => unreachable!("{v:?}"),
+            (_, Event::Build(_)) => unreachable!(),
             (
                 State::Reloading { server, watcher },
                 Event::Browser(BrowserEvent::ReloadSuccess(browser)),
