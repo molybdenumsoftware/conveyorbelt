@@ -55,6 +55,10 @@ impl Browser {
 
         let page = browser.new_page(address).await.context("creating page")?;
 
+        let pages = browser.pages().await.unwrap();
+
+        dbg!(pages);
+
         Ok(Self {
             handle: Box::leak(Box::new(browser)),
             pid,
