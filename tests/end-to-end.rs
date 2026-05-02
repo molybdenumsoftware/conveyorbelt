@@ -21,7 +21,6 @@ use chromiumoxide::{
         network::EventResponseReceived,
         target::GetTargetsParams,
     },
-    handler::HandlerConfig,
 };
 use futures::StreamExt as _;
 use indoc::formatdoc;
@@ -198,16 +197,8 @@ impl DBusSession {
 
 impl Subject {
     async fn connect_to_browser(&mut self) -> anyhow::Result<Browser> {
-        let state_for_testing = self.state_for_testing()?;
-
-        let config = HandlerConfig {
-            context_ids: vec![state_for_testing.browser_context_id],
-            ..Default::default()
-        };
-
         let (browser, handler) =
-            Browser::connect_with_config(state_for_testing.browser_debugging_address, config)
-                .await?;
+            Browser::connect(self.state_for_testing()?.browser_debugging_address).await?;
 
         tokio::spawn(async move {
             handler
@@ -601,12 +592,12 @@ async fn launched_browser_has_one_page_at_served_root() {
         .target_infos
         .clone();
 
-    assert_eq!(pages.len(), 1);
+    assert_eq!(pages.len(), 2);
 
-    //let page = pages.pop().unwrap();
-    // let actual = page.url().await.unwrap().unwrap();
-    // let expected = subject.url("/").unwrap();
-    // assert_eq!(actual, expected);
+    let page = &pages[1];
+    let actual = page.url.as_str();
+    let expected = subject.url("/").unwrap();
+    assert_eq!(actual, expected);
 }
 
 #[tokio::test]

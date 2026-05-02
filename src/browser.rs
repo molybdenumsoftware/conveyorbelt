@@ -1,10 +1,7 @@
 use std::time::Duration;
 
 use anyhow::{Context as _, anyhow};
-use chromiumoxide::{
-    BrowserConfig,
-    cdp::browser_protocol::{browser::BrowserContextId, target::CreateTargetParams},
-};
+use chromiumoxide::BrowserConfig;
 use futures::StreamExt;
 use tempfile::tempdir;
 use tracing::debug;
@@ -15,7 +12,6 @@ use crate::common::TESTING_MODE;
 //pub(crate) struct Browser(&'static mut chromiumoxide::Browser);
 pub(crate) struct Browser {
     handle: &'static chromiumoxide::Browser,
-    context_id: BrowserContextId,
     pid: u32,
     page: chromiumoxide::Page,
 }
@@ -57,27 +53,11 @@ impl Browser {
             .id()
             .context("failed to obtain browser pid")?;
 
-        let context_id = browser.create_browser_context(Default::default()).await?;
-
-        let page = browser
-            .pages()
-            .await
-            .context("obtaining pages")?
-            .pop()
-            .context("browser seems to have no page")?;
-
-        // let page = browser
-        //     .new_page(CreateTargetParams {
-        //         url,
-        //         browser_context_id: Some(context_id.clone()),
-        //         ..Default::default()
-        //     })
-        //     .await
-        //     .context("creating page")?;
+        // TODO: close the default tab (target)
+        let page = browser.new_page(url).await.context("creating page")?;
 
         Ok(Self {
             handle: Box::leak(Box::new(browser)),
-            context_id,
             pid,
             page,
         })
@@ -94,9 +74,5 @@ impl Browser {
     pub(crate) async fn reload(&self) -> anyhow::Result<()> {
         self.page.reload().await.context("reloading")?;
         Ok(())
-    }
-
-    pub(crate) fn context_id(&self) -> &BrowserContextId {
-        &self.context_id
     }
 }

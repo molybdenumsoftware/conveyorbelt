@@ -1,6 +1,5 @@
 use std::{io::BufRead as _, path::PathBuf};
 
-use chromiumoxide::cdp::browser_protocol::browser::BrowserContextId;
 use futures::future::BoxFuture;
 use serde::{Deserialize, Serialize};
 use tokio::io::AsyncBufReadExt as _;
@@ -13,7 +12,6 @@ pub(crate) struct StateForTesting {
     pub(crate) serve_port: u16,
     pub(crate) browser_pid: u32,
     pub(crate) browser_debugging_address: String,
-    pub(crate) browser_context_id: BrowserContextId,
 }
 
 impl std::fmt::Display for StateForTesting {
