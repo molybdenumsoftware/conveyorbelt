@@ -1,7 +1,10 @@
 use std::time::Duration;
 
 use anyhow::{Context as _, anyhow};
-use chromiumoxide::{BrowserConfig, cdp::browser_protocol::browser::BrowserContextId};
+use chromiumoxide::{
+    BrowserConfig,
+    cdp::browser_protocol::{browser::BrowserContextId, target::CreateTargetParams},
+};
 use futures::StreamExt;
 use tempfile::tempdir;
 use tracing::debug;
@@ -56,7 +59,10 @@ impl Browser {
 
         let context_id = browser.create_browser_context(Default::default()).await?;
 
-        let page = browser.new_page(address).await.context("creating page")?;
+        let page = browser
+            .new_page(CreateTargetParams::builder().browser_context_id(Some(context_id)).url(Some(address)).build()
+            .await
+            .context("creating page")?;
 
         Ok(Self {
             handle: Box::leak(Box::new(browser)),
