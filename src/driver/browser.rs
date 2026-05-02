@@ -1,7 +1,8 @@
 use std::convert::Infallible;
 
+use chromiumoxide::error::CdpError;
 use rxrust::prelude::*;
-use tokio_stream::wrappers::ReceiverStream;
+use tokio_stream::{StreamExt as _, wrappers::ReceiverStream};
 
 use crate::browser::Browser;
 
@@ -21,6 +22,7 @@ pub(crate) enum BrowserEvent {
     SpawnError(anyhow::Error),
     ReloadSuccess(Browser),
     ReloadError(Browser, anyhow::Error),
+    CdpError(CdpError),
 }
 
 impl BrowserDriver {
@@ -42,7 +44,20 @@ impl BrowserDriver {
         async move {
             let event = match command {
                 BrowserCommand::Spawn { url: address } => match Browser::init(address).await {
-                    Ok(browser) => BrowserEvent::SpawnSuccess(browser),
+                    Ok((browser, mut handler)) => {
+                        let event_sender = event_sender.clone();
+                        tokio::spawn(async move {
+                            while let Some(result) = handler.next().await {
+                                if let Err(error) = result {
+                                    event_sender
+                                        .send(BrowserEvent::CdpError(error))
+                                        .await
+                                        .unwrap();
+                                }
+                            }
+                        });
+                        BrowserEvent::SpawnSuccess(browser)
+                    }
                     Err(error) => BrowserEvent::SpawnError(error),
                 },
                 BrowserCommand::Reload(browser) => match browser.reload().await {

@@ -124,10 +124,7 @@ pub(crate) enum Event {
 #[derive(Debug)]
 pub(crate) enum Command {
     Println(String),
-    Eprintln(
-        // TODO use Error
-        String,
-    ),
+    Eprintln(String),
     Build(BuildCommand),
     Server(ServerCommand),
     FsWatch(FsWatchCommand),

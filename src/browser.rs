@@ -2,7 +2,6 @@ use std::time::Duration;
 
 use anyhow::{Context as _, anyhow};
 use chromiumoxide::BrowserConfig;
-use futures::StreamExt;
 use tempfile::tempdir;
 use tracing::debug;
 
@@ -17,7 +16,7 @@ pub(crate) struct Browser {
 }
 
 impl Browser {
-    pub(crate) async fn init(url: String) -> anyhow::Result<Self> {
+    pub(crate) async fn init(url: String) -> anyhow::Result<(Self, chromiumoxide::Handler)> {
         let browser_data_dir = tempdir().context("failed to create temporary browser data dir")?;
 
         debug!("browser data dir: {browser_data_dir:?}");
@@ -42,10 +41,6 @@ impl Browser {
             .await
             .context("failed to launch browser")?;
 
-        tokio::spawn(handler.for_each(|_result| async {
-            // TODO handle these
-        }));
-
         let pid = browser
             .get_mut_child()
             .context("failed to obtain mutable reference to browser Child")?
@@ -56,11 +51,14 @@ impl Browser {
         // TODO: close the default tab (target)
         let page = browser.new_page(url).await.context("creating page")?;
 
-        Ok(Self {
-            handle: Box::leak(Box::new(browser)),
-            pid,
-            page,
-        })
+        Ok((
+            Self {
+                handle: Box::leak(Box::new(browser)),
+                pid,
+                page,
+            },
+            handler,
+        ))
     }
 
     pub(crate) fn pid(&self) -> u32 {
