@@ -21,7 +21,7 @@ pub(crate) struct Browser {
 }
 
 impl Browser {
-    pub(crate) async fn init(address: String) -> anyhow::Result<Self> {
+    pub(crate) async fn init(url: String) -> anyhow::Result<Self> {
         let browser_data_dir = tempdir().context("failed to create temporary browser data dir")?;
 
         debug!("browser data dir: {browser_data_dir:?}");
@@ -60,7 +60,11 @@ impl Browser {
         let context_id = browser.create_browser_context(Default::default()).await?;
 
         let page = browser
-            .new_page(CreateTargetParams::builder().browser_context_id(Some(context_id)).url(Some(address)).build()
+            .new_page(CreateTargetParams {
+                url,
+                browser_context_id: Some(context_id.clone()),
+                ..Default::default()
+            })
             .await
             .context("creating page")?;
 
