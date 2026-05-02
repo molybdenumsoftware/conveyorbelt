@@ -865,7 +865,7 @@ fn initial_build_command_not_found() {
     let mut subject = fixture.spawn_subject().unwrap();
 
     subject
-        .wait_stderr_line_contains("build command failed to spawn: ")
+        .wait_stderr_line_contains("could not spawn build command: ")
         .unwrap();
 
     let status = subject.process.wait().unwrap();
