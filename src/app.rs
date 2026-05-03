@@ -420,7 +420,6 @@ impl App {
                 },
             ),
             // # TODO shut down the browser handler
-            // # TODO do not leak the browser
             (
                 state @ (State::SpawningBrowser { .. }
                 | State::Idle { .. }

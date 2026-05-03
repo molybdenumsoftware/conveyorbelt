@@ -19,6 +19,7 @@ impl Browser {
     pub(crate) async fn init(url: String) -> anyhow::Result<(Self, chromiumoxide::Handler)> {
         let browser_data_dir = tempdir().context("failed to create temporary browser data dir")?;
 
+        // #TODO do not trace anywhere?
         debug!("browser data dir: {browser_data_dir:?}");
 
         let mut browser_config_builder = BrowserConfig::builder()
