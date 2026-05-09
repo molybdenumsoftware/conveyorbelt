@@ -3,6 +3,7 @@ mod common;
 
 use std::{
     collections::BTreeSet,
+    env,
     fs::Permissions,
     io::{BufRead as _, Write},
     net::Ipv4Addr,
@@ -19,6 +20,7 @@ use chromiumoxide::{
     cdp::browser_protocol::{
         browser::{GetWindowBoundsParams, GetWindowForTargetParams},
         network::EventResponseReceived,
+        target::GetTargetsParams,
     },
 };
 use futures::StreamExt as _;
@@ -197,7 +199,7 @@ impl DBusSession {
 impl Subject {
     async fn connect_to_browser(&mut self) -> anyhow::Result<Browser> {
         let (browser, handler) =
-            Browser::connect(&self.state_for_testing()?.browser_debugging_address).await?;
+            Browser::connect(self.state_for_testing()?.browser_debugging_address).await?;
 
         tokio::spawn(async move {
             handler
@@ -220,7 +222,7 @@ impl Subject {
         ))
     }
 
-    fn wait_stderr_line_contains(&mut self, pat: &str) -> anyhow::Result<String> {
+    fn wait_stderr_line_contains(&mut self, pat: impl AsRef<str>) -> anyhow::Result<String> {
         loop {
             let mut stderr_lock = self.stderr.lock().map_err(|e| anyhow!("{e}"))?;
 
@@ -236,7 +238,7 @@ impl Subject {
                 .take(line_feed_index)
                 .collect::<String>();
 
-            if line.contains(pat) {
+            if line.contains(pat.as_ref()) {
                 return Ok(line);
             }
         }
@@ -409,7 +411,11 @@ impl Fixture {
             .env_clear()
             .env("DISPLAY", Xvfb::DISPLAY)
             .env(TESTING_MODE, "true")
-            .env("LOG_FILTER_VAR_NAME", "info")
+            .env("LOG_FILTER_VAR_NAME", env!("LOG_FILTER_VAR_NAME"))
+            .env(
+                env!("LOG_FILTER_VAR_NAME"),
+                env::var(env!("LOG_FILTER_VAR_NAME")).context("spawning subject")?,
+            )
             .env(
                 "PATH",
                 std::env::join_paths(&self.subject_path_env_var).unwrap(),
@@ -580,9 +586,23 @@ fn browser_orphaned() {
 }
 
 #[tokio::test]
-#[ignore = "TODO"]
 async fn launched_browser_has_one_page_at_served_root() {
-    todo!()
+    let fixture = Fixture::init().unwrap();
+    let mut subject = fixture.spawn_subject().unwrap();
+    let browser = subject.connect_to_browser().await.unwrap();
+
+    let pages = browser
+        .execute(GetTargetsParams { filter: None })
+        .await
+        .unwrap();
+
+    let [page] = pages.target_infos.as_slice() else {
+        panic!("pages length is not 1");
+    };
+
+    let actual = page.url.as_str();
+    let expected = subject.url("/").unwrap();
+    assert_eq!(actual, expected);
 }
 
 #[tokio::test]
@@ -865,7 +885,7 @@ fn initial_build_command_not_found() {
     let mut subject = fixture.spawn_subject().unwrap();
 
     subject
-        .wait_stderr_line_contains("build command failed to spawn: ")
+        .wait_stderr_line_contains("could not spawn build command: ")
         .unwrap();
 
     let status = subject.process.wait().unwrap();
@@ -877,7 +897,7 @@ fn initial_build_command_not_found() {
 fn subsequent_build_command_failed_to_spawn() {}
 
 #[test]
-fn build_command_not_executable() {
+fn initial_build_command_not_executable() {
     let fixture = Fixture::init().unwrap();
     std::fs::set_permissions(&*fixture.build_command, Permissions::from_mode(0o644)).unwrap();
     let mut subject = fixture.spawn_subject().unwrap();
@@ -1096,3 +1116,7 @@ fn no_extraneous_build_command_invocations() {
 
     assert_eq!(fixture.build_command_invocation_count().unwrap(), 2);
 }
+
+#[test]
+#[ignore = "TODO"]
+fn cdp_errors_are_reported() {}

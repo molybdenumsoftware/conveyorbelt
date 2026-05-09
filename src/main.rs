@@ -1,5 +1,4 @@
 mod app;
-mod browser;
 mod cli;
 #[path = "../common.rs"]
 mod common;
@@ -86,6 +85,5 @@ async fn async_main() -> anyhow::Result<()> {
         .for_each(|_| async {})
         .await;
 
-    // TODO shut down gracefully
     std::process::exit(1);
 }

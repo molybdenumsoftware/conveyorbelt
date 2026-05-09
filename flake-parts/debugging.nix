@@ -3,7 +3,7 @@
     buildEnv = {
       CARGO_PROFILE = "dev";
       LOG_FILTER_VAR_NAME = "LOG";
-      LOG = "trace";
+      LOG = "info";
     };
 
     buildArgs.dontStrip = true;

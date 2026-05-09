@@ -5,10 +5,9 @@ use rxrust::prelude::*;
 use tracing::info;
 
 use crate::{
-    browser::Browser,
     common::{SERVE_PATH, StateForTesting, TESTING_MODE},
     driver::{
-        browser::{BrowserCommand, BrowserEvent},
+        browser::{Browser, BrowserCommand, BrowserEvent},
         build::{BuildCommand, BuildEvent},
         fswatch::{FsEvent, FsWatchCommand},
         server::{ServeDir, Server, ServerCommand, ServerEvent},
@@ -124,10 +123,7 @@ pub(crate) enum Event {
 #[derive(Debug)]
 pub(crate) enum Command {
     Println(String),
-    Eprintln(
-        // TODO use Error
-        String,
-    ),
+    Eprintln(String),
     Build(BuildCommand),
     Server(ServerCommand),
     FsWatch(FsWatchCommand),
@@ -397,7 +393,7 @@ impl App {
                 vec![Command::Browser(BrowserCommand::Reload(browser))],
                 State::Reloading { server, watcher },
             ),
-            v @ (_, Event::Build(_)) => unreachable!("{v:?}"),
+            (_, Event::Build(_)) => unreachable!(),
             (
                 State::Reloading { server, watcher },
                 Event::Browser(BrowserEvent::ReloadSuccess(browser)),
@@ -421,6 +417,21 @@ impl App {
                     watcher,
                     browser,
                 },
+            ),
+            // # TODO shut down the browser handler
+            (
+                state @ (State::SpawningBrowser { .. }
+                | State::Idle { .. }
+                | State::Building { .. }
+                | State::Reloading { .. }
+                | State::ShuttingDown {
+                    server: _,
+                    watcher: _,
+                }),
+                Event::Browser(BrowserEvent::CdpError(error)),
+            ) => (
+                vec![Command::Eprintln(format!("CDP error: {error}"))],
+                state,
             ),
             (_, Event::Browser(_)) => unreachable!(),
             (
