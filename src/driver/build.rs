@@ -20,7 +20,7 @@ pub(crate) struct BuildDriver {
 pub(crate) enum BuildEvent {
     #[display("spawned pid {_0}")]
     Spawn(Pid),
-    #[display("spawn error: {_0}")]
+    #[display("spawn error: {_0:#}")]
     SpawnError(anyhow::Error),
     #[display("{output}: {line}")]
     OutputLine {

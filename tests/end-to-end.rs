@@ -251,7 +251,7 @@ impl Subject {
         ))
     }
 
-    fn wait_stderr_line_contains(&mut self, pat: impl AsRef<str>) -> anyhow::Result<String> {
+    fn wait_stderr_contains(&mut self, pat: impl AsRef<str>) -> anyhow::Result<String> {
         let pat = pat.as_ref();
         eprintln!("waiting for subject stderr line that contains: {pat}");
 
@@ -300,6 +300,13 @@ impl Subject {
 
         let _ = self.state_for_testing.insert(state_for_testing);
         Ok(self.state_for_testing.as_ref().unwrap().clone())
+    }
+
+    fn wait_browser_spawned(&mut self) -> anyhow::Result<()> {
+        self.wait_stderr_contains("event: browser: spawned")
+            .context("wait browser spawn")?;
+
+        Ok(())
     }
 }
 
@@ -412,15 +419,21 @@ impl Fixture {
             .env(TESTING_MODE, "true")
             .env("LOG_FILTER_VAR_NAME", env!("LOG_FILTER_VAR_NAME"))
             .env(
-                env!("LOG_FILTER_VAR_NAME"),
-                env::var(env!("LOG_FILTER_VAR_NAME")).context("spawning subject")?,
-            )
-            .env(
                 "PATH",
                 std::env::join_paths(&self.subject_path_env_var).unwrap(),
             )
             .env("SRC_PATH", self.src_path())
             .arg(self.build_command.as_os_str());
+
+        match env::var(env!("LOG_FILTER_VAR_NAME")) {
+            Ok(log_filter) => {
+                command.env(env!("LOG_FILTER_VAR_NAME"), log_filter);
+            }
+            Err(env::VarError::NotPresent) => {}
+            Err(error @ env::VarError::NotUnicode(_)) => {
+                bail!("read log filter env var: {error}");
+            }
+        }
 
         command.stdout(Stdio::piped()).stderr(Stdio::piped());
 
@@ -622,9 +635,9 @@ async fn custom_404_page() {
         .unwrap();
 
     let mut subject = fixture.spawn_subject().unwrap();
-    // TODO connecting to browser as a means to determine that the state is Idle
-    // feels somewhat implicit. Perhaps .wait_stderr_line_contains, instead
-    subject.connect_to_browser().await.unwrap();
+
+    subject.wait_browser_spawned().unwrap();
+
     let browser = FreshBrowser::spawn().await.unwrap();
     let page = browser.instance.new_page("about:blank").await.unwrap();
 
@@ -836,7 +849,7 @@ fn cannot_find_git_executable() {
     let mut fixture = Fixture::init().unwrap();
     fixture.subject_path_env_var.remove(env!("GIT_BIN_PATH"));
     let mut subject = fixture.spawn_subject().unwrap();
-    subject.wait_stderr_line_contains("failed to run ").unwrap();
+    subject.wait_stderr_contains("failed to run ").unwrap();
     let status = subject.process.wait().unwrap();
     assert_eq!(status.code(), Some(1));
 }
@@ -852,7 +865,7 @@ fn cannot_find_browser_executable() {
     let mut subject = fixture.spawn_subject().unwrap();
 
     subject
-        .wait_stderr_line_contains("Browser failed to spawn: ")
+        .wait_stderr_contains("Browser failed to spawn: ")
         .unwrap();
 
     let status = subject.process.wait().unwrap();
@@ -866,7 +879,7 @@ fn not_inside_a_git_work_tree() {
     let mut subject = fixture.spawn_subject().unwrap();
 
     subject
-        .wait_stderr_line_contains("not a git repository")
+        .wait_stderr_contains("not a git repository")
         .unwrap();
 
     let status = subject.process.wait().unwrap();
@@ -880,7 +893,7 @@ fn initial_build_command_not_found() {
     let mut subject = fixture.spawn_subject().unwrap();
 
     subject
-        .wait_stderr_line_contains("could not spawn build command: ")
+        .wait_stderr_contains("could not spawn build command: ")
         .unwrap();
 
     let status = subject.process.wait().unwrap();
@@ -888,17 +901,18 @@ fn initial_build_command_not_found() {
 }
 
 #[tokio::test]
-#[ignore = "TODO"]
 async fn subsequent_build_command_failed_to_spawn() {
     let fixture = Fixture::init().unwrap();
     let mut subject = fixture.spawn_subject().unwrap();
-    subject.connect_to_browser().await.unwrap();
+
+    subject.wait_browser_spawned().unwrap();
+
     fs::set_permissions(&*fixture.build_command, Permissions::from_mode(0o644)).unwrap();
 
     fixture.write_source_file("trigger", "").unwrap();
 
     subject
-        .wait_stderr_line_contains("could not spawn build command: ")
+        .wait_stderr_contains("event: build: spawn error")
         .unwrap();
 
     let status = subject.process.wait().unwrap();
@@ -913,7 +927,8 @@ fn subsequent_build_command_terminated_with_failure() {}
 async fn build_process_restart() {
     let mut fixture = Fixture::init().unwrap();
     let mut subject = fixture.spawn_subject().unwrap();
-    subject.connect_to_browser().await.unwrap();
+
+    subject.wait_browser_spawned().unwrap();
 
     fixture
         .replace_build_command_script(indoc! {"
@@ -927,7 +942,7 @@ async fn build_process_restart() {
     fixture.write_source_file("trigger", "").unwrap();
 
     subject
-        .wait_stderr_line_contains("build: stderr: looping")
+        .wait_stderr_contains("build: stderr: looping")
         .unwrap();
 
     fixture
@@ -937,15 +952,15 @@ async fn build_process_restart() {
     fixture.write_source_file("trigger-again", "").unwrap();
 
     subject
-        .wait_stderr_line_contains("event: build: sent SIGTERM to")
+        .wait_stderr_contains("event: build: sent SIGTERM to")
         .unwrap();
 
     subject
-        .wait_stderr_line_contains("event: build: terminated with code None")
+        .wait_stderr_contains("event: build: terminated with code None")
         .unwrap();
 
     subject
-        .wait_stderr_line_contains("event: build: stderr: hello")
+        .wait_stderr_contains("event: build: stderr: hello")
         .unwrap();
 }
 
@@ -956,7 +971,7 @@ fn initial_build_command_not_executable() {
     let mut subject = fixture.spawn_subject().unwrap();
 
     subject
-        .wait_stderr_line_contains("could not spawn build command: ")
+        .wait_stderr_contains("could not spawn build command: ")
         .unwrap();
 
     let status = subject.process.wait().unwrap();
@@ -972,7 +987,7 @@ fn initial_build_fail() {
     let mut subject = fixture.spawn_subject().unwrap();
 
     subject
-        .wait_stderr_line_contains("initial build failed")
+        .wait_stderr_contains("initial build failed")
         .unwrap();
 
     let status = subject.process.wait().unwrap();
@@ -990,7 +1005,7 @@ fn build_command_stderr() {
     let mut subject = fixture.spawn_subject().unwrap();
 
     subject
-        .wait_stderr_line_contains("build: stderr: some stderr line")
+        .wait_stderr_contains("build: stderr: some stderr line")
         .unwrap();
 }
 
@@ -1003,7 +1018,7 @@ fn build_command_stdout() {
     let mut subject = fixture.spawn_subject().unwrap();
 
     subject
-        .wait_stderr_line_contains("build: stdout: some stdout line")
+        .wait_stderr_contains("build: stdout: some stdout line")
         .unwrap();
 }
 
@@ -1022,13 +1037,13 @@ fn build_command_failure_followed_by_success() {
     let mut subject = fixture.spawn_subject().unwrap();
 
     subject
-        .wait_stderr_line_contains("build command exit status: 1")
+        .wait_stderr_contains("build command exit status: 1")
         .unwrap();
 
     fixture.write_source_file("foo", "no matter").unwrap();
 
     subject
-        .wait_stderr_line_contains("build command succeeded")
+        .wait_stderr_contains("build command succeeded")
         .unwrap();
 }
 
@@ -1075,7 +1090,7 @@ fn build_command_not_executed_on_git_ignored_file_creation() {
     .unwrap();
 
     subject
-        .wait_stderr_line_contains("build command succeeded")
+        .wait_stderr_contains("build command succeeded")
         .unwrap();
 
     fixture
@@ -1085,7 +1100,7 @@ fn build_command_not_executed_on_git_ignored_file_creation() {
     fixture.write_source_file("bar", "will trigger").unwrap();
 
     subject
-        .wait_stderr_line_contains("build command succeeded")
+        .wait_stderr_contains("build command succeeded")
         .unwrap();
 
     // TODO I saw a failure here, must be race
@@ -1109,21 +1124,44 @@ fn build_command_not_executed_on_git_ignored_file_removal() {
 }
 
 #[test]
-#[ignore = "TODO"]
 fn build_command_executed_on_file_creation() {
-    todo!();
+    let fixture = Fixture::init().unwrap();
+    let mut subject = fixture.spawn_subject().unwrap();
+    subject.wait_browser_spawned().unwrap();
+    fixture.write_source_file("new_file", "").unwrap();
+    subject
+        .wait_stderr_contains("event: build: spawned pid ")
+        .unwrap();
 }
 
 #[test]
-#[ignore = "TODO"]
 fn build_command_executed_on_file_change() {
-    todo!();
+    let fixture = Fixture::init().unwrap();
+    let mut subject = fixture.spawn_subject().unwrap();
+    subject.wait_browser_spawned().unwrap();
+    fixture.write_source_file("file", "").unwrap();
+    subject
+        .wait_stderr_contains("event: build: spawned pid ")
+        .unwrap();
+    fixture.write_source_file("file", "").unwrap();
+    subject
+        .wait_stderr_contains("event: build: spawned pid ")
+        .unwrap();
 }
 
 #[test]
-#[ignore = "TODO"]
 fn build_command_executed_on_file_removal() {
-    todo!();
+    let fixture = Fixture::init().unwrap();
+    let mut subject = fixture.spawn_subject().unwrap();
+    subject.wait_browser_spawned().unwrap();
+    fixture.write_source_file("file", "").unwrap();
+    subject
+        .wait_stderr_contains("event: build: spawned pid ")
+        .unwrap();
+    fs::remove_file(fixture.src_path().join("file")).unwrap();
+    subject
+        .wait_stderr_contains("event: build: spawned pid ")
+        .unwrap();
 }
 
 #[tokio::test]
@@ -1153,18 +1191,18 @@ fn no_extraneous_build_command_invocations() {
 
     // TODO method specifically for this
     subject
-        .wait_stderr_line_contains("build command succeeded")
+        .wait_stderr_contains("build command succeeded")
         .unwrap();
 
     fixture.write_source_file("a", "").unwrap();
     fixture.write_source_file("b", "").unwrap();
 
     subject
-        .wait_stderr_line_contains("build process already running")
+        .wait_stderr_contains("build process already running")
         .unwrap();
 
     subject
-        .wait_stderr_line_contains("build command succeeded")
+        .wait_stderr_contains("build command succeeded")
         .unwrap();
 }
 

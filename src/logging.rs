@@ -1,15 +1,19 @@
-use tracing::{info, level_filters::LevelFilter};
+use tracing::Level;
+use tracing_subscriber::filter::EnvFilter;
 
 pub(crate) fn init() {
-    let filter = tracing_subscriber::filter::EnvFilter::builder()
-        .with_default_directive(LevelFilter::INFO.into())
-        .with_env_var(env!("LOG_FILTER_VAR_NAME"))
-        .from_env_lossy();
+    let filter = EnvFilter::try_from_env(env!("LOG_FILTER_VAR_NAME")).unwrap_or_else(|_| {
+        EnvFilter::default()
+            .add_directive(Level::WARN.into())
+            .add_directive(
+                format!("{}=info", env!("CARGO_CRATE_NAME"))
+                    .parse()
+                    .unwrap(),
+            )
+    });
 
     tracing_subscriber::fmt()
         .with_writer(std::io::stderr)
         .with_env_filter(filter)
         .init();
-
-    info!("{} starting", env!("CARGO_PKG_NAME"));
 }

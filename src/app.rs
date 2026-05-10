@@ -77,13 +77,7 @@ enum ShuttingDownWatcherState {
 }
 
 impl State {
-    fn shut_down(
-        message: impl std::fmt::Display,
-        server: Option<Server>,
-        watcher: Option<INotifyWatcher>,
-    ) -> (Vec<Command>, State) {
-        eprintln!("{message}",);
-
+    fn shut_down(server: Option<Server>, watcher: Option<INotifyWatcher>) -> (Vec<Command>, State) {
         let (commands, server) = if let Some(server) = server {
             (
                 vec![Command::Server(ServerCommand::Terminate(server))],
@@ -108,7 +102,6 @@ impl State {
     }
 }
 
-// TODO implement Display for logging
 #[derive(Debug, derive_more::Display)]
 pub(crate) enum Event {
     #[display("initializing")]
@@ -123,7 +116,6 @@ pub(crate) enum Event {
     Fs(FsEvent),
 }
 
-// TODO implement Display for logging
 #[derive(Debug, derive_more::Display)]
 pub(crate) enum Command {
     #[display("build: {_0}")]
@@ -193,24 +185,16 @@ impl App {
                     server,
                     watcher,
                 },
-                Event::Build(BuildEvent::SpawnError(error)),
-            ) => State::shut_down(
-                format!("could not spawn build command: {error}"),
-                server,
-                watcher,
-            ),
+                Event::Build(BuildEvent::SpawnError(_)),
+            ) => State::shut_down(server, watcher),
             (
                 State::Initializing {
                     initial_build: InitialBuildState::Pending,
                     server: Some(server),
                     watcher,
                 },
-                Event::Build(BuildEvent::WaitError(error)),
-            ) => State::shut_down(
-                format!("failed to wait on build process termination: {error}"),
-                Some(server),
-                watcher,
-            ),
+                Event::Build(BuildEvent::WaitError(_)),
+            ) => State::shut_down(Some(server), watcher),
             (
                 state @ State::Initializing {
                     initial_build: InitialBuildState::Pending,
@@ -225,13 +209,13 @@ impl App {
                     watcher,
                 },
                 Event::Build(BuildEvent::TerminatedWithFailure(_)),
-            ) => State::shut_down("initial build failed", server, watcher),
+            ) => State::shut_down(server, watcher),
             (
                 State::Initializing {
                     server, watcher, ..
                 },
-                Event::Server(ServerEvent::SpawnError(error)),
-            ) => State::shut_down(format!("failed to spawn server: {error}"), server, watcher),
+                Event::Server(ServerEvent::SpawnError(_)),
+            ) => State::shut_down(server, watcher),
             (
                 State::Initializing {
                     initial_build: InitialBuildState::Pending,
@@ -298,8 +282,8 @@ impl App {
                     watcher: watcher @ None,
                     ..
                 },
-                Event::Fs(FsEvent::WatcherCreationError(error)),
-            ) => State::shut_down(format!("failed to create watcher {error}"), server, watcher),
+                Event::Fs(FsEvent::WatcherCreationError(_)),
+            ) => State::shut_down(server, watcher),
             (
                 State::Initializing {
                     initial_build,
@@ -321,8 +305,8 @@ impl App {
                     watcher: watcher @ None,
                     ..
                 },
-                Event::Fs(FsEvent::WatcherWatchError(error)),
-            ) => State::shut_down(format!("failed to start watcher {error}"), server, watcher),
+                Event::Fs(FsEvent::WatcherWatchError(_)),
+            ) => State::shut_down(server, watcher),
             (
                 state @ (State::Initializing {
                     watcher: Some(_), ..
@@ -363,12 +347,8 @@ impl App {
                 State::SpawningBrowser {
                     server, watcher, ..
                 },
-                Event::Browser(BrowserEvent::SpawnError(error)),
-            ) => State::shut_down(
-                format!("Browser failed to spawn: {error}"),
-                Some(server),
-                Some(watcher),
-            ),
+                Event::Browser(BrowserEvent::SpawnError(_)),
+            ) => State::shut_down(Some(server), Some(watcher)),
             (
                 State::Idle {
                     server,
@@ -390,6 +370,12 @@ impl App {
                     watcher,
                 },
             ),
+            (
+                State::BuildSpawning {
+                    server, watcher, ..
+                },
+                Event::Build(BuildEvent::SpawnError(_)),
+            ) => State::shut_down(Some(server), Some(watcher)),
             (
                 State::BuildSpawning {
                     server,
@@ -415,7 +401,6 @@ impl App {
                     watcher,
                     browser,
                 },
-                // TODO: add test for each event kind
                 Event::Fs(FsEvent::Change(_)),
             ) => (
                 vec![Command::Build(BuildCommand::Signal(pid, SIGTERM))],
@@ -499,7 +484,6 @@ impl App {
                     browser,
                 },
             ),
-            // # TODO shut down the browser handler
             (
                 state @ (State::SpawningBrowser { .. }
                 | State::Idle { .. }
@@ -620,8 +604,7 @@ impl App {
                 )
             }
             (_, Event::Server(_)) => unreachable!(),
-            // TODO remove?
-            v @ (_, Event::Fs(_)) => unreachable!("{v:?}"),
+            value @ (_, Event::Fs(_)) => unreachable!("{value:#?}"),
         })
     }
 }
