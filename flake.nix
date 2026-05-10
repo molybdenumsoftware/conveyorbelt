@@ -1,7 +1,7 @@
 # DO-NOT-EDIT. This file was auto-generated using github:vic/flake-file.
 # Use `nix run .#write-flake` to regenerate it.
 {
-  description = "CLI for web development that watches source, invokes rebuild, statically serves and triggers page reload";
+  description = "A based web dev workflow; stack-agnostic, hand-coded, 🦀";
 
   outputs = inputs: import ./outputs.nix inputs;
 
@@ -12,34 +12,33 @@
 
   inputs = {
     advisory-db = {
-      flake = false;
       url = "github:rustsec/advisory-db";
+      flake = false;
     };
     crane.url = "github:ipetkov/crane";
     files.url = "github:mightyiam/files";
     flake-compat = {
-      flake = false;
       url = "https://git.lix.systems/lix-project/flake-compat/archive/main.tar.gz";
+      flake = false;
     };
     flake-file.url = "github:vic/flake-file";
     flake-parts = {
-      inputs.nixpkgs-lib.follows = "nixpkgs";
       url = "github:hercules-ci/flake-parts";
+      inputs.nixpkgs-lib.follows = "nixpkgs";
     };
     import-tree.url = "github:vic/import-tree";
     license = {
-      flake = false;
       url = "https://spdx.org/licenses/MIT.txt";
+      flake = false;
     };
     make-shell = {
-      inputs.flake-compat.follows = "";
       url = "github:nicknovitski/make-shell";
+      inputs.flake-compat.follows = "";
     };
     nixpkgs.url = "https://channels.nixos.org/nixpkgs-unstable/nixexprs.tar.xz";
     treefmt-nix = {
-      inputs.nixpkgs.follows = "nixpkgs";
       url = "github:numtide/treefmt-nix";
+      inputs.nixpkgs.follows = "nixpkgs";
     };
   };
-
 }

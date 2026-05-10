@@ -7,7 +7,7 @@
     };
     description = lib.mkOption {
       type = lib.types.singleLineStr;
-      default = "CLI for web development that watches source, invokes rebuild, statically serves and triggers page reload";
+      default = "A based web dev workflow; stack-agnostic, hand-coded, 🦀";
     };
   };
   config = {

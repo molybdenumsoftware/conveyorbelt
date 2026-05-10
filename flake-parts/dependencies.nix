@@ -32,6 +32,7 @@ in
         derive_more.features = [
           "deref"
           "deref_mut"
+          "display"
         ];
         hyper = {
           features = [

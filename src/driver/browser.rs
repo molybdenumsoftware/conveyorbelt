@@ -17,18 +17,25 @@ pub(crate) struct BrowserDriver {
     event_sender: tokio::sync::mpsc::Sender<BrowserEvent>,
 }
 
-#[derive(Debug)]
+#[derive(Debug, derive_more::Display)]
 pub(crate) enum BrowserCommand {
+    #[display("spawn and go to {url}")]
     Spawn { url: String },
+    #[display("reload")]
     Reload(Browser),
 }
 
-#[derive(Debug)]
+#[derive(Debug, derive_more::Display)]
 pub(crate) enum BrowserEvent {
-    SpawnSuccess(Browser),
+    #[display("spawned")]
+    Spawn(Browser),
+    #[display("spawn error: {_0}")]
     SpawnError(anyhow::Error),
-    ReloadSuccess(Browser),
+    #[display("reloaded")]
+    Reload(Browser),
+    #[display("reload error: {_1}")]
     ReloadError(Browser, anyhow::Error),
+    #[display("CDP error: {_0}")]
     CdpError(CdpError),
 }
 
@@ -52,12 +59,12 @@ impl BrowserDriver {
             let event = match command {
                 BrowserCommand::Spawn { url: address } => {
                     match Browser::spawn(address, event_sender.clone()).await {
-                        Ok(browser) => BrowserEvent::SpawnSuccess(browser),
+                        Ok(browser) => BrowserEvent::Spawn(browser),
                         Err(error) => BrowserEvent::SpawnError(error),
                     }
                 }
                 BrowserCommand::Reload(browser) => match browser.reload().await {
-                    Ok(_) => BrowserEvent::ReloadSuccess(browser),
+                    Ok(_) => BrowserEvent::Reload(browser),
                     Err(error) => BrowserEvent::ReloadError(browser, error),
                 },
             };

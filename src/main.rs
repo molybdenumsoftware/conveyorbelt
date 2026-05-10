@@ -61,25 +61,12 @@ async fn async_main() -> anyhow::Result<()> {
             Command::Server(command) => Some(server_driver.effect(command).boxed()),
             Command::Build(command) => Some(build_driver.effect(command).boxed()),
             Command::Browser(command) => Some(browser_driver.effect(command).boxed()),
-            Command::FsWatch(command) => Some(fs_watch_driver.effect(command).boxed()),
-            Command::Println(string) => Some(
-                async move {
-                    println!("{string}");
-                }
-                .boxed(),
-            ),
-            Command::Eprintln(string) => Some(
-                // TODO well, what's the difference between tracing and this?
-                async move {
-                    eprintln!("{string}");
-                }
-                .boxed(),
-            ),
+            Command::Fs(command) => Some(fs_watch_driver.effect(command).boxed()),
             Command::Terminate => None,
         })
         .take_while(Option::is_some)
         .map(Option::unwrap)
-        .concat_map(Shared::from_future)
+        .flat_map(Shared::from_future)
         .delay(Duration::ZERO)
         .into_stream()
         .for_each(|_| async {})

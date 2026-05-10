@@ -1,15 +1,16 @@
 use std::{convert::Infallible, path::PathBuf, sync::Arc, vec::Vec};
 
+use nix::{sys::signal::Signal::SIGTERM, unistd::Pid};
 use notify::INotifyWatcher;
 use rxrust::prelude::*;
-use tracing::info;
+use tracing::{info, warn};
 
 use crate::{
     common::{SERVE_PATH, StateForTesting, TESTING_MODE},
     driver::{
         browser::{Browser, BrowserCommand, BrowserEvent},
         build::{BuildCommand, BuildEvent},
-        fswatch::{FsEvent, FsWatchCommand},
+        fswatch::{FsCommand, FsEvent},
         server::{ServeDir, Server, ServerCommand, ServerEvent},
     },
 };
@@ -32,7 +33,14 @@ enum State {
         watcher: INotifyWatcher,
         browser: Browser,
     },
-    Building {
+    BuildSpawning {
+        server: Server,
+        watcher: INotifyWatcher,
+        browser: Browser,
+    },
+    BuildWaiting {
+        pid: Pid,
+        is_restarting: bool,
         server: Server,
         watcher: INotifyWatcher,
         browser: Browser,
@@ -70,17 +78,19 @@ enum ShuttingDownWatcherState {
 
 impl State {
     fn shut_down(
-        message: impl Into<String>,
+        message: impl std::fmt::Display,
         server: Option<Server>,
         watcher: Option<INotifyWatcher>,
     ) -> (Vec<Command>, State) {
-        let mut commands = vec![Command::Eprintln(message.into())];
+        eprintln!("{message}",);
 
-        let server = if let Some(server) = server {
-            commands.push(Command::Server(ServerCommand::Terminate(server)));
-            ShuttingDownServerState::Terminating
+        let (commands, server) = if let Some(server) = server {
+            (
+                vec![Command::Server(ServerCommand::Terminate(server))],
+                ShuttingDownServerState::Terminating,
+            )
         } else {
-            ShuttingDownServerState::Spawning
+            (vec![], ShuttingDownServerState::Spawning)
         };
 
         let watcher = if let Some(watcher) = watcher {
@@ -94,40 +104,37 @@ impl State {
     }
 
     fn terminate() -> (Vec<Command>, State) {
-        (
-            vec![
-                Command::Eprintln("terminating".to_string()),
-                Command::Terminate,
-            ],
-            State::Terminating,
-        )
-    }
-
-    fn terminate_error(message: impl Into<String>) -> (Vec<Command>, State) {
-        (
-            vec![Command::Eprintln(message.into()), Command::Terminate],
-            State::Terminating,
-        )
+        (vec![Command::Terminate], State::Terminating)
     }
 }
 
-#[derive(Debug)]
+// TODO implement Display for logging
+#[derive(Debug, derive_more::Display)]
 pub(crate) enum Event {
+    #[display("initializing")]
     Init,
+    #[display("server: {_0}")]
     Server(ServerEvent),
+    #[display("build: {_0}")]
     Build(BuildEvent),
+    #[display("browser: {_0}")]
     Browser(BrowserEvent),
+    #[display("fs: {_0}")]
     Fs(FsEvent),
 }
 
-#[derive(Debug)]
+// TODO implement Display for logging
+#[derive(Debug, derive_more::Display)]
 pub(crate) enum Command {
-    Println(String),
-    Eprintln(String),
+    #[display("build: {_0}")]
     Build(BuildCommand),
+    #[display("server: {_0}")]
     Server(ServerCommand),
-    FsWatch(FsWatchCommand),
+    #[display("fs: {_0}")]
+    Fs(FsCommand),
+    #[display("browser: {_0}")]
     Browser(BrowserCommand),
+    #[display("terminate")]
     Terminate,
 }
 
@@ -148,27 +155,27 @@ impl App {
             .start_with(vec![Event::Init])
             .map(move |event| self.event_handler(&mut state, event))
             .flat_map(Shared::from_iter)
-            .tap(|command| info!("command: {command:?}"))
+            .tap(|command| info!("command: {command}"))
             .box_it()
     }
 
     fn event_handler(&self, state: &mut State, event: Event) -> Vec<Command> {
-        let build_command = BuildCommand {
-            path: self.build_command_path.clone(),
-            envs: vec![(
-                SERVE_PATH.to_string(),
-                self.serve_dir.path().to_str().unwrap().to_string(),
-            )],
-        };
+        info!("event: {event}");
 
-        info!("event: {event:?}");
+        let build_command_path = self.build_command_path.clone();
 
         replace_with::replace_with_or_abort_and_return(state, |state| match (state, event) {
             (State::Blank, Event::Init) => (
                 vec![
-                    Command::Build(build_command),
+                    Command::Build(BuildCommand::Spawn {
+                        path: build_command_path.clone(),
+                        envs: vec![(
+                            SERVE_PATH.to_string(),
+                            self.serve_dir.path().to_str().unwrap().to_string(),
+                        )],
+                    }),
                     Command::Server(ServerCommand::Spawn(self.serve_dir.clone())),
-                    Command::FsWatch(FsWatchCommand::Init(self.project_root.clone())),
+                    Command::Fs(FsCommand::Init(self.project_root.clone())),
                 ],
                 State::Initializing {
                     initial_build: InitialBuildState::Pending,
@@ -205,12 +212,19 @@ impl App {
                 watcher,
             ),
             (
+                state @ State::Initializing {
+                    initial_build: InitialBuildState::Pending,
+                    ..
+                },
+                Event::Build(BuildEvent::Spawn(_)),
+            ) => (vec![], state),
+            (
                 State::Initializing {
                     initial_build: InitialBuildState::Pending,
                     server,
                     watcher,
                 },
-                Event::Build(BuildEvent::TerminatedWithFailure),
+                Event::Build(BuildEvent::TerminatedWithFailure(_)),
             ) => State::shut_down("initial build failed", server, watcher),
             (
                 State::Initializing {
@@ -232,7 +246,7 @@ impl App {
                     server: None,
                     watcher: Some(watcher),
                 },
-                Event::Server(ServerEvent::SpawnSuccess(server)),
+                Event::Server(ServerEvent::Spawn(server)),
             )
             | (
                 State::Initializing {
@@ -269,7 +283,7 @@ impl App {
                     server: None,
                     watcher,
                 },
-                Event::Server(ServerEvent::SpawnSuccess(server)),
+                Event::Server(ServerEvent::Spawn(server)),
             ) => (
                 vec![],
                 State::Initializing {
@@ -288,6 +302,21 @@ impl App {
             ) => State::shut_down(format!("failed to create watcher {error}"), server, watcher),
             (
                 State::Initializing {
+                    initial_build,
+                    server,
+                    watcher: None,
+                },
+                Event::Fs(FsEvent::Watching(watcher)),
+            ) => (
+                vec![],
+                State::Initializing {
+                    initial_build,
+                    server,
+                    watcher: Some(watcher),
+                },
+            ),
+            (
+                State::Initializing {
                     server,
                     watcher: watcher @ None,
                     ..
@@ -300,13 +329,17 @@ impl App {
                 }
                 | State::SpawningBrowser { .. }
                 | State::Idle { .. }
-                | State::Building { .. }),
+                | State::BuildSpawning { .. }
+                | State::BuildWaiting { .. }),
                 Event::Fs(FsEvent::EventError(error)),
-            ) => (vec![Command::Eprintln(error.to_string())], state),
+            ) => {
+                warn!("{error}");
+                (vec![], state)
+            }
             (
                 State::SpawningBrowser { server, watcher },
-                Event::Browser(BrowserEvent::SpawnSuccess(browser)),
-            ) => (
+                Event::Browser(BrowserEvent::Spawn(browser)),
+            ) => {
                 if std::env::var(TESTING_MODE).is_ok() {
                     let state_for_testing = StateForTesting {
                         serve_path: self.serve_dir.path().to_path_buf(),
@@ -314,16 +347,18 @@ impl App {
                         browser_debugging_address: browser.debugging_address(),
                         browser_pid: browser.pid(),
                     };
-                    vec![Command::Println(format!("{state_for_testing}"))]
-                } else {
-                    vec![]
-                },
-                State::Idle {
-                    server,
-                    watcher,
-                    browser,
-                },
-            ),
+                    println!("{state_for_testing}");
+                }
+
+                (
+                    vec![],
+                    State::Idle {
+                        server,
+                        watcher,
+                        browser,
+                    },
+                )
+            }
             (
                 State::SpawningBrowser {
                     server, watcher, ..
@@ -340,19 +375,56 @@ impl App {
                     browser,
                     watcher,
                 },
-                Event::Fs(FsEvent::Event(notify::Event {
-                    kind:
-                        notify::EventKind::Create(_)
-                        | notify::EventKind::Modify(_)
-                        | notify::EventKind::Remove(_),
-                    ..
-                })),
+                Event::Fs(FsEvent::Change(_)),
             ) => (
-                vec![Command::Build(build_command.clone())],
-                State::Building {
+                vec![Command::Build(BuildCommand::Spawn {
+                    path: build_command_path.clone(),
+                    envs: vec![(
+                        SERVE_PATH.to_string(),
+                        self.serve_dir.path().to_str().unwrap().to_string(),
+                    )],
+                })],
+                State::BuildSpawning {
                     server,
                     browser,
                     watcher,
+                },
+            ),
+            (
+                State::BuildSpawning {
+                    server,
+                    watcher,
+                    browser,
+                },
+                Event::Build(BuildEvent::Spawn(pid)),
+            ) => (
+                vec![],
+                State::BuildWaiting {
+                    pid,
+                    is_restarting: false,
+                    server,
+                    watcher,
+                    browser,
+                },
+            ),
+            (
+                State::BuildWaiting {
+                    pid,
+                    is_restarting: false,
+                    server,
+                    watcher,
+                    browser,
+                },
+                // TODO: add test for each event kind
+                Event::Fs(FsEvent::Change(_)),
+            ) => (
+                vec![Command::Build(BuildCommand::Signal(pid, SIGTERM))],
+                State::BuildWaiting {
+                    pid,
+                    is_restarting: true,
+                    server,
+                    watcher,
+                    browser,
                 },
             ),
             (
@@ -360,43 +432,54 @@ impl App {
                     initial_build: InitialBuildState::Pending,
                     ..
                 }
-                | State::Building { .. }),
-                Event::Build(BuildEvent::Stdoutln(line)),
-            ) => (
-                vec![Command::Eprintln(format!(
-                    "build process stdout line: {line}"
-                ))],
-                state,
-            ),
+                | State::BuildSpawning { .. }
+                | State::BuildWaiting { .. }),
+                Event::Build(BuildEvent::OutputLine { .. }),
+            ) => (vec![], state),
+            (state, Event::Fs(FsEvent::Change(_))) => (vec![], state),
             (
-                state @ (State::Initializing {
-                    initial_build: InitialBuildState::Pending,
-                    ..
-                }
-                | State::Building { .. }),
-                Event::Build(BuildEvent::Stderrln(line)),
-            ) => (
-                vec![Command::Eprintln(format!(
-                    "build process stderr line: {line}"
-                ))],
-                state,
-            ),
-            (state, Event::Fs(FsEvent::Event(_))) => (vec![], state),
-            (
-                State::Building {
+                State::BuildWaiting {
+                    is_restarting: false,
                     server,
                     browser,
                     watcher,
+                    ..
                 },
                 Event::Build(BuildEvent::TerminatedSuccessfully),
             ) => (
                 vec![Command::Browser(BrowserCommand::Reload(browser))],
                 State::Reloading { server, watcher },
             ),
+            (state @ State::BuildWaiting { .. }, Event::Build(BuildEvent::SignalSent(_, _))) => {
+                (vec![], state)
+            }
+            (
+                State::BuildWaiting {
+                    is_restarting: true,
+                    server,
+                    watcher,
+                    browser,
+                    ..
+                },
+                Event::Build(BuildEvent::TerminatedWithFailure(None)),
+            ) => (
+                vec![Command::Build(BuildCommand::Spawn {
+                    path: build_command_path.clone(),
+                    envs: vec![(
+                        SERVE_PATH.to_string(),
+                        self.serve_dir.path().to_str().unwrap().to_string(),
+                    )],
+                })],
+                State::BuildSpawning {
+                    server,
+                    watcher,
+                    browser,
+                },
+            ),
             (_, Event::Build(_)) => unreachable!(),
             (
                 State::Reloading { server, watcher },
-                Event::Browser(BrowserEvent::ReloadSuccess(browser)),
+                Event::Browser(BrowserEvent::Reload(browser)),
             ) => (
                 vec![],
                 State::Idle {
@@ -407,11 +490,9 @@ impl App {
             ),
             (
                 State::Reloading { server, watcher },
-                Event::Browser(BrowserEvent::ReloadError(browser, error)),
+                Event::Browser(BrowserEvent::ReloadError(browser, ..)),
             ) => (
-                vec![Command::Eprintln(format!(
-                    "failed to reload browser: {error}"
-                ))],
+                vec![],
                 State::Idle {
                     server,
                     watcher,
@@ -422,31 +503,29 @@ impl App {
             (
                 state @ (State::SpawningBrowser { .. }
                 | State::Idle { .. }
-                | State::Building { .. }
+                | State::BuildSpawning { .. }
+                | State::BuildWaiting { .. }
                 | State::Reloading { .. }
                 | State::ShuttingDown {
                     server: _,
                     watcher: _,
                 }),
-                Event::Browser(BrowserEvent::CdpError(error)),
-            ) => (
-                vec![Command::Eprintln(format!("CDP error: {error}"))],
-                state,
-            ),
+                Event::Browser(BrowserEvent::CdpError(_)),
+            ) => (vec![], state),
             (_, Event::Browser(_)) => unreachable!(),
             (
                 State::ShuttingDown {
                     server: ShuttingDownServerState::Spawning,
                     watcher: _,
                 },
-                Event::Server(ServerEvent::SpawnError(error)),
-            ) => State::terminate_error(format!("failed to spawn server: {error}")),
+                Event::Server(ServerEvent::SpawnError(_)),
+            ) => State::terminate(),
             (
                 State::ShuttingDown {
                     server: ShuttingDownServerState::Spawning,
                     watcher,
                 },
-                Event::Server(ServerEvent::SpawnSuccess(server)),
+                Event::Server(ServerEvent::Spawn(server)),
             ) => (
                 vec![Command::Server(ServerCommand::Terminate(server))],
                 State::ShuttingDown {
@@ -459,18 +538,16 @@ impl App {
                     server: ShuttingDownServerState::Terminating,
                     watcher: ShuttingDownWatcherState::Dropped,
                 },
-                Event::Server(ServerEvent::TerminationError(error)),
-            ) => State::terminate_error(format!("failed to terminate server: {error}")),
+                Event::Server(ServerEvent::TerminationError(_)),
+            ) => State::terminate(),
             (
                 State::ShuttingDown {
                     server: ShuttingDownServerState::Terminating,
                     watcher: watcher @ ShuttingDownWatcherState::Spawning,
                 },
-                Event::Server(ServerEvent::TerminationError(error)),
+                Event::Server(ServerEvent::TerminationError(_)),
             ) => (
-                vec![Command::Eprintln(format!(
-                    "failed to terminate server: {error}"
-                ))],
+                vec![],
                 State::ShuttingDown {
                     server: ShuttingDownServerState::Terminating,
                     watcher,
@@ -481,18 +558,16 @@ impl App {
                     server: ShuttingDownServerState::Terminating,
                     watcher: ShuttingDownWatcherState::Dropped,
                 },
-                Event::Server(ServerEvent::TerminationJoinError(error)),
-            ) => State::terminate_error(format!("failed to join server task: {error}")),
+                Event::Server(ServerEvent::TaskJoinError(_)),
+            ) => State::terminate(),
             (
                 State::ShuttingDown {
                     server: ShuttingDownServerState::Terminating,
                     watcher: watcher @ ShuttingDownWatcherState::Spawning,
                 },
-                Event::Server(ServerEvent::TerminationJoinError(error)),
+                Event::Server(ServerEvent::TaskJoinError(_)),
             ) => (
-                vec![Command::Eprintln(format!(
-                    "failed to join server task: {error}"
-                ))],
+                vec![],
                 State::ShuttingDown {
                     server: ShuttingDownServerState::TerminationFailed,
                     watcher,
@@ -503,14 +578,14 @@ impl App {
                     server: ShuttingDownServerState::Terminating,
                     watcher: ShuttingDownWatcherState::Dropped,
                 },
-                Event::Server(ServerEvent::TerminationSuccess),
+                Event::Server(ServerEvent::Termination),
             ) => State::terminate(),
             (
                 State::ShuttingDown {
                     server: ShuttingDownServerState::Terminating,
                     watcher: watcher @ ShuttingDownWatcherState::Spawning,
                 },
-                Event::Server(ServerEvent::TerminationSuccess),
+                Event::Server(ServerEvent::Termination),
             ) => (
                 vec![],
                 State::ShuttingDown {
@@ -545,6 +620,7 @@ impl App {
                 )
             }
             (_, Event::Server(_)) => unreachable!(),
+            // TODO remove?
             v @ (_, Event::Fs(_)) => unreachable!("{v:?}"),
         })
     }

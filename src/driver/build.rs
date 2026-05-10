@@ -1,6 +1,11 @@
 use std::{convert::Infallible, path::PathBuf, process::Stdio};
 
+use anyhow::Context;
 use futures::FutureExt;
+use nix::{
+    sys::signal::{SIGTERM, Signal},
+    unistd::Pid,
+};
 use rxrust::prelude::*;
 use tokio::{process::Command, sync::mpsc};
 use tokio_stream::wrappers::ReceiverStream;
@@ -11,20 +16,46 @@ pub(crate) struct BuildDriver {
     event_sender: mpsc::Sender<BuildEvent>,
 }
 
-#[derive(Debug)]
+#[derive(Debug, derive_more::Display)]
 pub(crate) enum BuildEvent {
-    SpawnError(std::io::Error),
-    Stdoutln(String),
-    Stderrln(String),
+    #[display("spawned pid {_0}")]
+    Spawn(Pid),
+    #[display("spawn error: {_0}")]
+    SpawnError(anyhow::Error),
+    #[display("{output}: {line}")]
+    OutputLine {
+        output: Output,
+        line: String,
+    },
+    // TODO is this converted to space case?
     TerminatedSuccessfully,
-    TerminatedWithFailure,
+    #[display("terminated with code {_0:?}")]
+    TerminatedWithFailure(Option<i32>),
+    #[display("error waiting for termination: {_0}")]
     WaitError(std::io::Error),
+    #[display("error sending signal: {_0}")]
+    SignalError(nix::errno::Errno),
+    #[display("sent {_1} to {_0}")]
+    SignalSent(Pid, Signal),
 }
 
-#[derive(Debug, Clone)]
-pub(crate) struct BuildCommand {
-    pub(crate) path: PathBuf,
-    pub(crate) envs: Vec<(String, String)>,
+#[derive(Debug, Clone, Copy, derive_more::Display)]
+pub(crate) enum Output {
+    #[display("stdout")]
+    Out,
+    #[display("stderr")]
+    Err,
+}
+
+#[derive(Debug, Clone, derive_more::Display)]
+pub(crate) enum BuildCommand {
+    #[display("spawn {path:?} with env {envs:?}")]
+    Spawn {
+        path: PathBuf,
+        envs: Vec<(String, String)>,
+    },
+    #[display("send {_1} to {_0}")]
+    Signal(Pid, Signal),
 }
 
 impl BuildDriver {
@@ -40,70 +71,105 @@ impl BuildDriver {
     pub(crate) fn effect(&self, command: BuildCommand) -> impl Future<Output = ()> + 'static {
         let event_sender = self.event_sender.clone();
         async move {
-            let spawn_result = Command::new(command.path.clone())
-                .envs(command.envs.clone())
-                .stdout(Stdio::piped())
-                .stderr(Stdio::piped())
-                .spawn();
+            match command {
+                BuildCommand::Spawn { path, envs } => {
+                    let spawn_result = Command::new(path.clone())
+                        .envs(envs.clone())
+                        .stdout(Stdio::piped())
+                        .stderr(Stdio::piped())
+                        .spawn()
+                        .context("spawn build process");
 
-            let mut child = match spawn_result {
-                Ok(child) => child,
-                Err(error) => {
+                    let mut child = match spawn_result {
+                        Ok(child) => child,
+                        Err(error) => {
+                            event_sender
+                                .send(BuildEvent::SpawnError(error))
+                                .await
+                                .unwrap();
+                            return;
+                        }
+                    };
+
+                    let event_sender_clone = event_sender.clone();
+                    let stdout_join_handle = child
+                        .for_stdout_line(move |line| {
+                            let line = line.to_owned();
+                            let event_sender = event_sender_clone.clone();
+                            async move {
+                                event_sender
+                                    .send(BuildEvent::OutputLine {
+                                        output: Output::Out,
+                                        line,
+                                    })
+                                    .await
+                                    .unwrap();
+                            }
+                            .boxed()
+                        })
+                        .unwrap();
+
+                    let event_sender_clone = event_sender.clone();
+                    let stderr_join_handle = child
+                        .for_stderr_line(move |line| {
+                            let line = line.to_owned();
+                            let event_sender = event_sender_clone.clone();
+                            async move {
+                                event_sender
+                                    .send(BuildEvent::OutputLine {
+                                        output: Output::Err,
+                                        line,
+                                    })
+                                    .await
+                                    .unwrap();
+                            }
+                            .boxed()
+                        })
+                        .unwrap();
+
+                    let pid = match child.id().context("obtain build process id") {
+                        Ok(pid) => Pid::from_raw(pid as i32),
+                        Err(error) => {
+                            event_sender
+                                .send(BuildEvent::SpawnError(error))
+                                .await
+                                .unwrap();
+
+                            return;
+                        }
+                    };
+
+                    event_sender.send(BuildEvent::Spawn(pid)).await.unwrap();
+
+                    let wait_event = match child.wait().await {
+                        Ok(exit_status) => match exit_status.success() {
+                            true => BuildEvent::TerminatedSuccessfully,
+                            false => BuildEvent::TerminatedWithFailure(exit_status.code()),
+                        },
+                        Err(error) => BuildEvent::WaitError(error),
+                    };
+
+                    // TODO await concurrently
+                    stderr_join_handle.await.unwrap();
+                    stdout_join_handle.await.unwrap();
+
+                    event_sender.send(wait_event).await.unwrap();
+                }
+
+                BuildCommand::Signal(pid, signal) => {
+                    if let Err(error) = nix::sys::signal::kill(pid, signal) {
+                        event_sender
+                            .send(BuildEvent::SignalError(error))
+                            .await
+                            .unwrap();
+                    };
+
                     event_sender
-                        .send(BuildEvent::SpawnError(error))
+                        .send(BuildEvent::SignalSent(pid, SIGTERM))
                         .await
                         .unwrap();
-                    return;
                 }
-            };
-
-            let event_sender_clone = event_sender.clone();
-            let stdout_join_handle = child
-                .for_stdout_line(move |line| {
-                    let line = line.to_owned();
-                    let event_sender = event_sender_clone.clone();
-                    async move {
-                        event_sender
-                            .send(BuildEvent::Stdoutln(format!(
-                                "build command stdout: {line}"
-                            )))
-                            .await
-                            .unwrap();
-                    }
-                    .boxed()
-                })
-                .unwrap();
-
-            let event_sender_clone = event_sender.clone();
-            let stderr_join_handle = child
-                .for_stderr_line(move |line| {
-                    let line = line.to_owned();
-                    let event_sender = event_sender_clone.clone();
-                    async move {
-                        event_sender
-                            .send(BuildEvent::Stderrln(format!(
-                                "build command stderr: {line}"
-                            )))
-                            .await
-                            .unwrap();
-                    }
-                    .boxed()
-                })
-                .unwrap();
-
-            let wait_event = match child.wait().await {
-                Ok(exit_status) => match exit_status.success() {
-                    true => BuildEvent::TerminatedSuccessfully,
-                    false => BuildEvent::TerminatedWithFailure,
-                },
-                Err(error) => BuildEvent::WaitError(error),
-            };
-
-            // TODO await concurrently
-            stderr_join_handle.await.unwrap();
-            stdout_join_handle.await.unwrap();
-
-            event_sender.send(wait_event).await.unwrap();
+            }
         }
     }
 }

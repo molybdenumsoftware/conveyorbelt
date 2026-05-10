@@ -23,6 +23,12 @@ use tracing::info;
 #[derive(Debug, derive_more::Deref)]
 pub(crate) struct ServeDir(TempDir);
 
+impl std::fmt::Display for ServeDir {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{:?}", self.0.path())
+    }
+}
+
 impl ServeDir {
     pub(crate) fn obtain() -> anyhow::Result<Self> {
         let temp_dir = TempDir::new()?;
@@ -31,19 +37,26 @@ impl ServeDir {
     }
 }
 
-#[derive(Debug)]
+#[derive(Debug, derive_more::Display)]
 pub(crate) enum ServerCommand {
+    #[display("spawn at {_0}")]
     Spawn(Arc<ServeDir>),
+    // TODO see how this formats
     Terminate(Server),
 }
 
-#[derive(Debug)]
+#[derive(Debug, derive_more::Display)]
 pub(crate) enum ServerEvent {
+    #[display("spawn error: {_0}")]
     SpawnError(anyhow::Error),
-    SpawnSuccess(Server),
-    TerminationSuccess,
+    #[display("spawn: {_0}")]
+    Spawn(Server),
+    #[display("terminated")]
+    Termination,
+    #[display("termination error: {_0}")]
     TerminationError(hyper::Error),
-    TerminationJoinError(tokio::task::JoinError),
+    #[display("task join error: {_0}")]
+    TaskJoinError(tokio::task::JoinError),
 }
 
 pub(crate) struct ServerDriver {
@@ -69,14 +82,14 @@ impl ServerDriver {
             let event = match command {
                 ServerCommand::Spawn(serve_dir) => {
                     match Server::spawn(serve_dir.path().to_path_buf()) {
-                        Ok(server) => ServerEvent::SpawnSuccess(server),
+                        Ok(server) => ServerEvent::Spawn(server),
                         Err(error) => ServerEvent::SpawnError(error),
                     }
                 }
                 ServerCommand::Terminate(server) => match server.shutdown().await {
-                    Ok(Ok(())) => ServerEvent::TerminationSuccess,
+                    Ok(Ok(())) => ServerEvent::Termination,
                     Ok(Err(error)) => ServerEvent::TerminationError(error),
-                    Err(join_error) => ServerEvent::TerminationJoinError(join_error),
+                    Err(join_error) => ServerEvent::TaskJoinError(join_error),
                 },
             };
             event_sender.send(event).await.unwrap();
@@ -89,6 +102,12 @@ pub(crate) struct Server {
     address: SocketAddr,
     shutdown_sender: oneshot::Sender<()>,
     join_handle: JoinHandle<hyper::Result<()>>,
+}
+
+impl std::fmt::Display for Server {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "server at address {}", self.address)
+    }
 }
 
 impl Server {
