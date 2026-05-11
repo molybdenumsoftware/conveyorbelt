@@ -865,7 +865,7 @@ fn cannot_find_browser_executable() {
     let mut subject = fixture.spawn_subject().unwrap();
 
     subject
-        .wait_stderr_contains("Browser failed to spawn: ")
+        .wait_stderr_contains("Could not auto detect a chrome executable")
         .unwrap();
 
     let status = subject.process.wait().unwrap();
