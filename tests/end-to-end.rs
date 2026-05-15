@@ -901,7 +901,7 @@ fn initial_build_command_not_found() {
 }
 
 #[tokio::test]
-async fn subsequent_build_command_failed_to_spawn() {
+async fn subsequent_build_failed_to_spawn() {
     let fixture = Fixture::init().unwrap();
     let mut subject = fixture.spawn_subject().unwrap();
 
@@ -920,7 +920,7 @@ async fn subsequent_build_command_failed_to_spawn() {
 }
 
 #[test]
-fn subsequent_build_command_terminated_with_failure() {
+fn subsequent_build_terminated_with_failure() {
     let mut fixture = Fixture::init().unwrap();
     let mut subject = fixture.spawn_subject().unwrap();
 
@@ -1041,8 +1041,7 @@ fn build_command_stdout() {
 }
 
 #[test]
-#[ignore = "TODO"]
-fn build_command_failure_followed_by_success() {
+fn build_failure_followed_by_success() {
     let mut fixture = Fixture::init().unwrap();
 
     fixture
@@ -1096,7 +1095,7 @@ async fn browser_window_not_at_default_chromiumoxide_dimensions() {
 
 #[test]
 #[ignore = "TODO"]
-fn build_command_not_executed_on_git_ignored_file_creation() {
+fn build_not_executed_on_git_ignored_file_creation() {
     let fixture = Fixture::init().unwrap();
     let mut subject = fixture.spawn_subject().unwrap();
     subject.state_for_testing().unwrap();
@@ -1131,18 +1130,18 @@ fn build_command_not_executed_on_git_ignored_file_creation() {
 
 #[test]
 #[ignore = "TODO"]
-fn build_command_not_executed_on_git_ignored_file_change() {
+fn build_not_executed_on_git_ignored_file_change() {
     todo!();
 }
 
 #[test]
 #[ignore = "TODO"]
-fn build_command_not_executed_on_git_ignored_file_removal() {
+fn build_not_executed_on_git_ignored_file_removal() {
     todo!();
 }
 
 #[test]
-fn build_command_executed_on_file_creation() {
+fn build_executed_on_file_creation() {
     let fixture = Fixture::init().unwrap();
     let mut subject = fixture.spawn_subject().unwrap();
     subject.wait_browser_spawned().unwrap();
@@ -1153,7 +1152,7 @@ fn build_command_executed_on_file_creation() {
 }
 
 #[test]
-fn build_command_executed_on_file_change() {
+fn build_executed_on_file_change() {
     let fixture = Fixture::init().unwrap();
     let mut subject = fixture.spawn_subject().unwrap();
     subject.wait_browser_spawned().unwrap();
@@ -1168,7 +1167,7 @@ fn build_command_executed_on_file_change() {
 }
 
 #[test]
-fn build_command_executed_on_file_removal() {
+fn build_executed_on_file_removal() {
     let fixture = Fixture::init().unwrap();
     let mut subject = fixture.spawn_subject().unwrap();
     subject.wait_browser_spawned().unwrap();
@@ -1184,7 +1183,7 @@ fn build_command_executed_on_file_removal() {
 
 #[tokio::test]
 #[ignore = "TODO"]
-async fn browser_reloads_following_build_command_execution() {
+async fn browser_reloads_following_build_execution() {
     todo!();
 }
 
@@ -1203,7 +1202,7 @@ async fn browser_reloads_following_build_command_execution() {
 
 #[test]
 #[ignore = "TODO"]
-fn no_extraneous_build_command_invocations() {
+fn no_extraneous_build_invocations() {
     let fixture = Fixture::init().unwrap();
     let mut subject = fixture.spawn_subject().unwrap();
 

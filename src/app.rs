@@ -446,7 +446,7 @@ impl App {
                     browser,
                     ..
                 },
-                Event::Build(BuildEvent::TerminatedWithFailure(None)),
+                Event::Build(BuildEvent::TerminatedWithFailure(_)),
             ) => (
                 vec![Command::Build(BuildCommand::Spawn {
                     path: build_command_path.clone(),
@@ -456,6 +456,23 @@ impl App {
                     )],
                 })],
                 State::BuildSpawning {
+                    server,
+                    watcher,
+                    browser,
+                },
+            ),
+            (
+                State::BuildWaiting {
+                    is_restarting: false,
+                    server,
+                    watcher,
+                    browser,
+                    ..
+                },
+                Event::Build(BuildEvent::TerminatedWithFailure(_)),
+            ) => (
+                vec![],
+                State::Idle {
                     server,
                     watcher,
                     browser,
