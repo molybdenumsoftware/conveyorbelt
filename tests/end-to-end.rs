@@ -893,7 +893,7 @@ fn initial_build_command_not_found() {
     let mut subject = fixture.spawn_subject().unwrap();
 
     subject
-        .wait_stderr_contains("could not spawn build command: ")
+        .wait_stderr_contains("build: spawn error: spawn build process: ")
         .unwrap();
 
     let status = subject.process.wait().unwrap();
@@ -971,7 +971,7 @@ fn initial_build_command_not_executable() {
     let mut subject = fixture.spawn_subject().unwrap();
 
     subject
-        .wait_stderr_contains("could not spawn build command: ")
+        .wait_stderr_contains("build: spawn error: spawn build process: ")
         .unwrap();
 
     let status = subject.process.wait().unwrap();
@@ -987,7 +987,7 @@ fn initial_build_fail() {
     let mut subject = fixture.spawn_subject().unwrap();
 
     subject
-        .wait_stderr_contains("initial build failed")
+        .wait_stderr_contains("build: terminated with code Some(1)")
         .unwrap();
 
     let status = subject.process.wait().unwrap();
