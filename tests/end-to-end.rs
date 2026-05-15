@@ -1103,24 +1103,19 @@ fn build_not_executed_on_git_ignored_file_creation() {
     subject.wait_browser_spawned().unwrap();
 
     fixture.write_source_file("foo", "no trigger").unwrap();
-    fixture.write_source_file("bar", "do trigger").unwrap();
-
-    subject
-        .wait_stderr_contains("build command succeeded")
-        .unwrap();
-
-    // TODO I saw a failure here, must be race
-    // ```
-    //  > assertion `left == right` failed
-    // >   left: 3
-    // >  right: 2
-    // ```
+    subject.wait_stderr_contains("file change ignored").unwrap();
 }
 
 #[test]
 #[ignore = "TODO"]
 fn build_not_executed_on_git_ignored_file_change() {
-    todo!();
+    let fixture = Fixture::init().unwrap();
+    fixture.write_source_file(".gitignore", "foo\n").unwrap();
+    let mut subject = fixture.spawn_subject().unwrap();
+    subject.wait_browser_spawned().unwrap();
+
+    fixture.write_source_file("foo", "no trigger").unwrap();
+    subject.wait_stderr_contains("file change ignored").unwrap();
 }
 
 #[test]
