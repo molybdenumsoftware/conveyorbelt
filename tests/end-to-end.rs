@@ -1097,23 +1097,26 @@ async fn browser_window_not_at_default_chromiumoxide_dimensions() {
 
 #[test]
 fn build_not_executed_on_git_ignored_file_creation() {
-    let fixture = Fixture::init().unwrap();
+    let mut fixture = Fixture::init().unwrap();
     fixture.write_source_file(".gitignore", "foo\n").unwrap();
     let mut subject = fixture.spawn_subject().unwrap();
     subject.wait_browser_spawned().unwrap();
-
+    fixture
+        .replace_build_command_script(formatdoc! {"
+        touch $env.{SERVE_PATH}/
+    "})
+        .unwrap();
     fixture.write_source_file("foo", "no trigger").unwrap();
     subject.wait_stderr_contains("file change ignored").unwrap();
 }
 
 #[test]
-#[ignore = "TODO"]
 fn build_not_executed_on_git_ignored_file_change() {
     let fixture = Fixture::init().unwrap();
+    fixture.write_source_file("foo", "").unwrap();
     fixture.write_source_file(".gitignore", "foo\n").unwrap();
     let mut subject = fixture.spawn_subject().unwrap();
     subject.wait_browser_spawned().unwrap();
-
     fixture.write_source_file("foo", "no trigger").unwrap();
     subject.wait_stderr_contains("file change ignored").unwrap();
 }
