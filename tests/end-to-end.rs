@@ -919,9 +919,25 @@ async fn subsequent_build_command_failed_to_spawn() {
     assert_eq!(status.code(), Some(1));
 }
 
-#[test]
-#[ignore = "TODO"]
-fn subsequent_build_command_terminated_with_failure() {}
+#[tokio::test]
+// #[ignore = "TODO"]
+async fn subsequent_build_command_terminated_with_failure() {
+    let fixture = Fixture::init().unwrap();
+    let mut subject = fixture.spawn_subject().unwrap();
+
+    subject.wait_browser_spawned().unwrap();
+
+    fs::set_permissions(&*fixture.build_command, Permissions::from_mode(0o644)).unwrap();
+
+    fixture.write_source_file("trigger", "").unwrap();
+
+    subject
+        .wait_stderr_contains("event: build: spawn error")
+        .unwrap();
+
+    let status = subject.process.wait().unwrap();
+    assert_eq!(status.code(), Some(1));
+}
 
 #[tokio::test]
 async fn build_process_restart() {
