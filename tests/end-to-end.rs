@@ -1103,11 +1103,26 @@ fn build_not_executed_on_git_ignored_file_creation() {
     subject.wait_browser_spawned().unwrap();
     fixture
         .replace_build_command_script(formatdoc! {"
-        touch $env.{SERVE_PATH}/
+        touch ($env.{SERVE_PATH})/foo
     "})
         .unwrap();
     fixture.write_source_file("foo", "no trigger").unwrap();
-    subject.wait_stderr_contains("file change ignored").unwrap();
+    subject.wait_stderr_contains("foo").unwrap();
+
+    fixture
+        .replace_build_command_script(formatdoc! {"
+        touch ($env.{SERVE_PATH})/bar
+    "})
+        .unwrap();
+    fixture.write_source_file("bar", "trigger").unwrap();
+    subject.wait_stderr_contains("bar").unwrap();
+
+    subject
+        .wait_stderr_contains("build: TerminatedSuccessfully")
+        .unwrap();
+    let serve_path = subject.state_for_testing().unwrap().serve_path;
+    assert!(!fs::exists(serve_path.join("foo")).unwrap());
+    assert!(fs::exists(serve_path.join("bar")).unwrap());
 }
 
 #[test]
