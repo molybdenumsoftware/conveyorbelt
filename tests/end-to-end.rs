@@ -1043,25 +1043,27 @@ fn build_command_stdout() {
 #[test]
 fn build_failure_followed_by_success() {
     let mut fixture = Fixture::init().unwrap();
-
-    fixture
-        .replace_build_command_script(formatdoc! {
-            r#" if ("{}/foo" | path exists) {{ exit 0 }} else {{ exit 1 }} "#,
-            fixture.src_path().to_str().unwrap()
-        })
-        .unwrap();
-
     let mut subject = fixture.spawn_subject().unwrap();
 
+    subject.wait_browser_spawned().unwrap();
+
+    fixture.replace_build_command_script("exit 1").unwrap();
+
+    fixture.write_source_file("trigger", "").unwrap();
+
     subject
-        .wait_stderr_contains("build command exit status: 1")
+        .wait_stderr_contains("build: terminated with code Some(1)")
         .unwrap();
 
-    fixture.write_source_file("foo", "no matter").unwrap();
+    fixture.replace_build_command_script("exit 0").unwrap();
+
+    fixture.write_source_file("trigger", "").unwrap();
 
     subject
-        .wait_stderr_contains("build command succeeded")
+        .wait_stderr_contains("build: TerminatedSuccessfully")
         .unwrap();
+
+    subject.wait_stderr_contains("browser: reloaded").unwrap();
 }
 
 #[tokio::test]
@@ -1181,10 +1183,16 @@ fn build_executed_on_file_removal() {
         .unwrap();
 }
 
-#[tokio::test]
-#[ignore = "TODO"]
-async fn browser_reloads_following_build_execution() {
-    todo!();
+#[test]
+fn browser_reloads_following_build_execution() {
+    let fixture = Fixture::init().unwrap();
+    let mut subject = fixture.spawn_subject().unwrap();
+
+    subject.wait_browser_spawned().unwrap();
+
+    fixture.write_source_file("trigger", "").unwrap();
+
+    subject.wait_stderr_contains("browser: reloaded").unwrap();
 }
 
 // TODO make sure `.gitignore` is not the only ignore file that is used in testing
