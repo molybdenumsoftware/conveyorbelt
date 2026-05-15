@@ -1096,27 +1096,14 @@ async fn browser_window_not_at_default_chromiumoxide_dimensions() {
 }
 
 #[test]
-#[ignore = "TODO"]
 fn build_not_executed_on_git_ignored_file_creation() {
     let fixture = Fixture::init().unwrap();
+    fixture.write_source_file(".gitignore", "foo\n").unwrap();
     let mut subject = fixture.spawn_subject().unwrap();
-    subject.state_for_testing().unwrap();
+    subject.wait_browser_spawned().unwrap();
 
-    fs::write(
-        fixture.root.path().join(".gitignore"),
-        format!("{}\n", fixture.src_path().join("foo").to_str().unwrap()).as_bytes(),
-    )
-    .unwrap();
-
-    subject
-        .wait_stderr_contains("build command succeeded")
-        .unwrap();
-
-    fixture
-        .write_source_file("foo", "will not trigger")
-        .unwrap();
-
-    fixture.write_source_file("bar", "will trigger").unwrap();
+    fixture.write_source_file("foo", "no trigger").unwrap();
+    fixture.write_source_file("bar", "do trigger").unwrap();
 
     subject
         .wait_stderr_contains("build command succeeded")
@@ -1207,29 +1194,6 @@ fn browser_reloads_following_build_execution() {
 // TODO use watchexec to handle signals
 // TODO loggin of termination by signal
 // TODO test sub
-
-#[test]
-#[ignore = "TODO"]
-fn no_extraneous_build_invocations() {
-    let fixture = Fixture::init().unwrap();
-    let mut subject = fixture.spawn_subject().unwrap();
-
-    // TODO method specifically for this
-    subject
-        .wait_stderr_contains("build command succeeded")
-        .unwrap();
-
-    fixture.write_source_file("a", "").unwrap();
-    fixture.write_source_file("b", "").unwrap();
-
-    subject
-        .wait_stderr_contains("build process already running")
-        .unwrap();
-
-    subject
-        .wait_stderr_contains("build command succeeded")
-        .unwrap();
-}
 
 #[test]
 #[ignore = "TODO"]
