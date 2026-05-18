@@ -635,7 +635,6 @@ async fn custom_404_page() {
         .unwrap();
 
     let mut subject = fixture.spawn_subject().unwrap();
-
     subject.wait_browser_spawned().unwrap();
 
     let browser = FreshBrowser::spawn().await.unwrap();
@@ -652,6 +651,8 @@ async fn custom_404_page() {
     let title = page.get_title().await.unwrap().unwrap();
     assert_eq!(title, "Ain't found");
 }
+
+// TODO prefix test stderr lines with test name
 
 #[tokio::test]
 async fn html_extension_can_be_omitted() {
@@ -1096,7 +1097,7 @@ async fn browser_window_not_at_default_chromiumoxide_dimensions() {
 }
 
 #[test]
-fn build_not_executed_on_git_ignored_file_creation() {
+fn build_not_executed_on_git_ignored_file_create() {
     let mut fixture = Fixture::init().unwrap();
     fixture.write_source_file(".gitignore", "/foo").unwrap();
     let mut subject = fixture.spawn_subject().unwrap();
@@ -1110,7 +1111,7 @@ fn build_not_executed_on_git_ignored_file_creation() {
     fixture.write_source_file("foo", "no trigger").unwrap();
 
     subject
-        .wait_stderr_contains("/foo\" (git ignored) ")
+        .wait_stderr_contains("/foo\" (git ignored) create")
         .unwrap();
 
     fixture
@@ -1129,20 +1130,71 @@ fn build_not_executed_on_git_ignored_file_creation() {
 }
 
 #[test]
-fn build_not_executed_on_git_ignored_file_change() {
-    let fixture = Fixture::init().unwrap();
-    fixture.write_source_file("foo", "").unwrap();
-    fixture.write_source_file(".gitignore", "foo\n").unwrap();
+fn build_not_executed_on_git_ignored_file_modify() {
+    let mut fixture = Fixture::init().unwrap();
+    fixture.write_source_file(".gitignore", "/foo").unwrap();
+    fixture.write_source_file("foo", "create").unwrap();
     let mut subject = fixture.spawn_subject().unwrap();
-    subject.wait_browser_spawned().unwrap();
+    let serve_path = &subject.state_for_testing().unwrap().serve_path;
+    let serve_path_str = serve_path.to_str().unwrap();
+
+    fixture
+        .replace_build_command_script(format!("touch {serve_path_str}/foo-indicator"))
+        .unwrap();
+
     fixture.write_source_file("foo", "no trigger").unwrap();
-    subject.wait_stderr_contains("file change ignored").unwrap();
+
+    subject
+        .wait_stderr_contains("/foo\" (git ignored) modify")
+        .unwrap();
+
+    fixture
+        .replace_build_command_script(format!("touch {serve_path_str}/bar-indicator"))
+        .unwrap();
+
+    fixture.write_source_file("bar", "trigger").unwrap();
+    subject.wait_stderr_contains("/bar\" create File").unwrap();
+
+    subject
+        .wait_stderr_contains("build: TerminatedSuccessfully")
+        .unwrap();
+
+    assert!(!fs::exists(serve_path.join("foo-indicator")).unwrap());
+    assert!(fs::exists(serve_path.join("bar-indicator")).unwrap());
 }
 
 #[test]
-#[ignore = "TODO"]
-fn build_not_executed_on_git_ignored_file_removal() {
-    todo!();
+fn build_not_executed_on_git_ignored_file_remove() {
+    let mut fixture = Fixture::init().unwrap();
+    fixture.write_source_file(".gitignore", "/foo").unwrap();
+    fixture.write_source_file("foo", "create").unwrap();
+    let mut subject = fixture.spawn_subject().unwrap();
+    let serve_path = &subject.state_for_testing().unwrap().serve_path;
+    let serve_path_str = serve_path.to_str().unwrap();
+
+    fixture
+        .replace_build_command_script(format!("touch {serve_path_str}/foo-indicator"))
+        .unwrap();
+
+    fs::remove_file(fixture.src_path().join("foo")).unwrap();
+
+    subject
+        .wait_stderr_contains("/foo\" (git ignored) remove")
+        .unwrap();
+
+    fixture
+        .replace_build_command_script(format!("touch {serve_path_str}/bar-indicator"))
+        .unwrap();
+
+    fixture.write_source_file("bar", "trigger").unwrap();
+    subject.wait_stderr_contains("/bar\" create File").unwrap();
+
+    subject
+        .wait_stderr_contains("build: TerminatedSuccessfully")
+        .unwrap();
+
+    assert!(!fs::exists(serve_path.join("foo-indicator")).unwrap());
+    assert!(fs::exists(serve_path.join("bar-indicator")).unwrap());
 }
 
 #[test]
