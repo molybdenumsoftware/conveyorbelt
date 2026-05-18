@@ -25,14 +25,14 @@ version = "*"
 default-features = false
 version = "*"
 
+[dependencies.git2]
+default-features = false
+version = "*"
+
 [dependencies.hyper]
 default-features = false
 features = ["http1", "server"]
 version = "0"
-
-[dependencies.ignore-files]
-default-features = false
-version = "*"
 
 [dependencies.nix]
 default-features = false

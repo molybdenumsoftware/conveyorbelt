@@ -15,7 +15,7 @@ in
       lib.genAttrs [
         "chromiumoxide"
         "futures"
-        "ignore-files"
+        "git2"
         "notify"
         "serde"
         "serde_json"

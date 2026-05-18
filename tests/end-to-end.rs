@@ -1098,31 +1098,34 @@ async fn browser_window_not_at_default_chromiumoxide_dimensions() {
 #[test]
 fn build_not_executed_on_git_ignored_file_creation() {
     let mut fixture = Fixture::init().unwrap();
-    fixture.write_source_file(".gitignore", "foo\n").unwrap();
+    fixture.write_source_file(".gitignore", "/foo").unwrap();
     let mut subject = fixture.spawn_subject().unwrap();
-    subject.wait_browser_spawned().unwrap();
-    fixture
-        .replace_build_command_script(formatdoc! {"
-        touch ($env.{SERVE_PATH})/foo
-    "})
-        .unwrap();
-    fixture.write_source_file("foo", "no trigger").unwrap();
-    subject.wait_stderr_contains("foo").unwrap();
+    let serve_path = &subject.state_for_testing().unwrap().serve_path;
+    let serve_path_str = serve_path.to_str().unwrap();
 
     fixture
-        .replace_build_command_script(formatdoc! {"
-        touch ($env.{SERVE_PATH})/bar
-    "})
+        .replace_build_command_script(format!("touch {serve_path_str}/foo-indicator"))
         .unwrap();
+
+    fixture.write_source_file("foo", "no trigger").unwrap();
+
+    subject
+        .wait_stderr_contains("/foo\" (git ignored) ")
+        .unwrap();
+
+    fixture
+        .replace_build_command_script(format!("touch {serve_path_str}/bar-indicator"))
+        .unwrap();
+
     fixture.write_source_file("bar", "trigger").unwrap();
-    subject.wait_stderr_contains("bar").unwrap();
+    subject.wait_stderr_contains("/bar\" create File").unwrap();
 
     subject
         .wait_stderr_contains("build: TerminatedSuccessfully")
         .unwrap();
-    let serve_path = subject.state_for_testing().unwrap().serve_path;
-    assert!(!fs::exists(serve_path.join("foo")).unwrap());
-    assert!(fs::exists(serve_path.join("bar")).unwrap());
+
+    assert!(!fs::exists(serve_path.join("foo-indicator")).unwrap());
+    assert!(fs::exists(serve_path.join("bar-indicator")).unwrap());
 }
 
 #[test]

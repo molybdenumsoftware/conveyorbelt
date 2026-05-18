@@ -10,7 +10,7 @@ use crate::{
     driver::{
         browser::{Browser, BrowserCommand, BrowserEvent},
         build::{BuildCommand, BuildEvent},
-        fswatch::{FsCommand, FsEvent},
+        fswatch::{FsChange, FsCommand, FsEvent},
         server::{ServeDir, Server, ServerCommand, ServerEvent},
     },
 };
@@ -355,7 +355,9 @@ impl App {
                     browser,
                     watcher,
                 },
-                Event::Fs(FsEvent::Change(_)),
+                Event::Fs(FsEvent::Change(FsChange {
+                    is_ignored: false, ..
+                })),
             ) => (
                 vec![Command::Build(BuildCommand::Spawn {
                     path: build_command_path.clone(),
@@ -401,7 +403,9 @@ impl App {
                     watcher,
                     browser,
                 },
-                Event::Fs(FsEvent::Change(_)),
+                Event::Fs(FsEvent::Change(FsChange {
+                    is_ignored: false, ..
+                })),
             ) => (
                 vec![Command::Build(BuildCommand::Signal(pid, SIGTERM))],
                 State::BuildWaiting {

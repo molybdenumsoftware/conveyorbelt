@@ -1,3 +1,4 @@
+use git2::Repository;
 use notify::{INotifyWatcher, RecursiveMode, Watcher as _};
 use rxrust::prelude::*;
 use tokio::sync::mpsc;
@@ -13,7 +14,6 @@ pub(crate) enum FsCommand {
 
 #[derive(Debug, derive_more::Display)]
 pub(crate) enum FsEvent {
-    #[display("watcher creation error: {_0}")]
     WatcherCreationError(notify::Error),
     #[display("watcher created")]
     Watching(INotifyWatcher),
@@ -23,13 +23,31 @@ pub(crate) enum FsEvent {
     EventError(notify::Error),
     #[display("change: {_0}")]
     Change(FsChange),
+    #[display("git2 error: {_0}")]
+    Git2Error(git2::Error),
 }
 
-#[derive(Debug, Clone, derive_more::Display)]
-#[display("{paths:?}: {kind}")]
+#[derive(Debug, Clone)]
 pub(crate) struct FsChange {
-    paths: Vec<PathBuf>,
-    kind: FsChangeKind,
+    pub(crate) path: PathBuf,
+    pub(crate) kind: FsChangeKind,
+    pub(crate) is_ignored: bool,
+}
+
+impl std::fmt::Display for FsChange {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        let path = &self.path;
+        let kind = &self.kind;
+        let mut string = format!("{path:?}");
+
+        if self.is_ignored {
+            string.push_str(" (git ignored)");
+        }
+
+        string.push_str(&format!(" {kind}"));
+
+        write!(f, "{string}")
+    }
 }
 
 #[derive(Debug, Clone, Copy, derive_more::Display)]
@@ -50,6 +68,7 @@ impl FsWatchDriver {
     pub(crate) fn new() -> (SharedBoxedObservable<'static, FsEvent, Infallible>, Self) {
         let (event_sender, event_receiver) = mpsc::channel(1);
         let driver = Self { event_sender };
+
         (
             Shared::from_stream(ReceiverStream::new(event_receiver)).box_it(),
             driver,
@@ -62,6 +81,16 @@ impl FsWatchDriver {
             match command {
                 FsCommand::Init(path_buf) => {
                     let event_sender_clone = event_sender.clone();
+                    let repository = match Repository::open_from_env() {
+                        Ok(repository) => repository,
+                        Err(error) => {
+                            event_sender_clone
+                                .blocking_send(FsEvent::Git2Error(error))
+                                .unwrap();
+                            return;
+                        }
+                    };
+
                     let event_handler = move |event| {
                         let event: notify::Event = match event {
                             Ok(event) => event,
@@ -81,12 +110,25 @@ impl FsWatchDriver {
                             _ => return,
                         };
 
-                        event_sender_clone
-                            .blocking_send(FsEvent::Change(FsChange {
-                                paths: event.paths,
-                                kind,
-                            }))
-                            .unwrap();
+                        for path in event.paths {
+                            let is_ignored = match repository.is_path_ignored(&path) {
+                                Ok(is_ignored) => is_ignored,
+                                Err(error) => {
+                                    event_sender_clone
+                                        .blocking_send(FsEvent::Git2Error(error))
+                                        .unwrap();
+                                    return;
+                                }
+                            };
+
+                            event_sender_clone
+                                .blocking_send(FsEvent::Change(FsChange {
+                                    path,
+                                    kind,
+                                    is_ignored,
+                                }))
+                                .unwrap();
+                        }
                     };
                     let mut watcher = match notify::recommended_watcher(event_handler) {
                         Ok(watcher) => watcher,
