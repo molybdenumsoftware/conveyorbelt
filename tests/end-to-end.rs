@@ -161,10 +161,10 @@ impl SharedEnvironment {
 }
 
 #[derive(Debug, Clone)]
-struct NuScript(String);
+struct Script(String);
 
-impl NuScript {
-    fn new(content: impl Into<String>) -> Self {
+impl Script {
+    fn new(executable_path: &'static str, content: impl Into<String>) -> Self {
         const NU_EXECUTABLE: &str = env!("NU_EXECUTABLE");
         let content = content.into();
 
@@ -393,7 +393,7 @@ impl Fixture {
         let subject_path_env_var =
             BTreeSet::from_iter([env!("CHROMIUM_BIN_PATH"), env!("GIT_BIN_PATH")].to_vec());
 
-        let build_command = NuScript::new(formatdoc! {r#"
+        let build_command = Script::new(formatdoc! {r#"
             if ($env.{SERVE_PATH} | path exists) {{
                 rm --recursive $env.{SERVE_PATH}
             }}
@@ -429,11 +429,12 @@ impl Fixture {
 
     fn set_build_command_nu(&mut self, script: impl Into<String>) -> anyhow::Result<()> {
         let path = &self.build_command.0;
-        fs::write(path, NuScript::new(script.into()).0).context("write build command nu")?;
+        fs::write(path, Script::new(env!("NU_EXECUTABLE"), script.into()).0)
+            .context("write build command nu")?;
         Ok(())
     }
 
-    fn set_build_command_bash(&self, formatdoc: String) -> _ {
+    fn set_build_command_bash(&mut self, script: impl Into<String>) -> anyhow::Result<()> {
         let path = &self.build_command.0;
         fs::write(path, BashScript::new(script.into()).0).context("write build command bash")?;
         Ok(())
