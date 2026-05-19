@@ -165,11 +165,10 @@ struct Script(String);
 
 impl Script {
     fn new(executable_path: &'static str, content: impl Into<String>) -> Self {
-        const NU_EXECUTABLE: &str = env!("NU_EXECUTABLE");
         let content = content.into();
 
         let content = formatdoc! {r#"
-            #! {NU_EXECUTABLE}
+            #! {executable_path}
             {content}
         "#};
 
@@ -179,7 +178,6 @@ impl Script {
     fn into_executable(self) -> anyhow::Result<NuExecutable> {
         let mut temp_file = tempfile::Builder::new()
             .permissions(Permissions::from_mode(0o755))
-            .suffix(".nu")
             .tempfile()
             .context("temporary build command file")?;
 
@@ -191,39 +189,6 @@ impl Script {
 
 #[derive(Debug, derive_more::Deref, derive_more::DerefMut)]
 struct NuExecutable(TempPath);
-
-// TODO deduplicate with NuScript
-#[derive(Debug, Clone)]
-struct BashScript(String);
-
-impl BashScript {
-    fn new(content: impl Into<String>) -> Self {
-        const BASH_EXECUTABLE: &str = env!("_BASH_EXECUTABLE");
-        let content = content.into();
-
-        let content = formatdoc! {r#"
-            #! {BASH_EXECUTABLE}
-            {content}
-        "#};
-
-        Self(content)
-    }
-
-    fn into_executable(self) -> anyhow::Result<BashExecutable> {
-        let mut temp_file = tempfile::Builder::new()
-            .permissions(Permissions::from_mode(0o755))
-            .suffix(".nu")
-            .tempfile()
-            .context("temporary build command file")?;
-
-        temp_file.as_file_mut().write_all(self.0.as_bytes())?;
-
-        Ok(BashExecutable(temp_file.into_temp_path()))
-    }
-}
-
-#[derive(Debug, derive_more::Deref, derive_more::DerefMut)]
-struct BashExecutable(TempPath);
 
 #[derive(Debug)]
 struct DBusSession(#[allow(dead_code)] DroppyChild);
@@ -393,13 +358,16 @@ impl Fixture {
         let subject_path_env_var =
             BTreeSet::from_iter([env!("CHROMIUM_BIN_PATH"), env!("GIT_BIN_PATH")].to_vec());
 
-        let build_command = Script::new(formatdoc! {r#"
-            if ($env.{SERVE_PATH} | path exists) {{
-                rm --recursive $env.{SERVE_PATH}
-            }}
-            mkdir $env.SRC_PATH
-            cp --verbose --recursive --preserve [mode, link] $env.SRC_PATH $env.{SERVE_PATH}
-        "#})
+        let build_command = Script::new(
+            env!("NU_EXECUTABLE"),
+            formatdoc! {r#"
+                if ($env.{SERVE_PATH} | path exists) {{
+                    rm --recursive $env.{SERVE_PATH}
+                }}
+                mkdir $env.SRC_PATH
+                cp --verbose --recursive --preserve [mode, link] $env.SRC_PATH $env.{SERVE_PATH}
+            "#},
+        )
         .into_executable()?;
 
         let mut git_init_command =
@@ -436,7 +404,8 @@ impl Fixture {
 
     fn set_build_command_bash(&mut self, script: impl Into<String>) -> anyhow::Result<()> {
         let path = &self.build_command.0;
-        fs::write(path, BashScript::new(script.into()).0).context("write build command bash")?;
+        fs::write(path, Script::new(env!("_BASH_EXECUTABLE"), script.into()).0)
+            .context("write build command bash")?;
         Ok(())
     }
 
