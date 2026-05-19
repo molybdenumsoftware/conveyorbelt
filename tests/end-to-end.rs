@@ -1266,3 +1266,16 @@ fn browser_reloads_following_build_execution() {
 #[test]
 #[ignore = "TODO"]
 fn cdp_errors_are_reported() {}
+
+#[test]
+fn build_succeeds_while_being_terminated() {
+    let mut fixture = Fixture::init().unwrap();
+    let mut subject = fixture.spawn_subject().unwrap();
+    subject.wait_browser_spawned().unwrap();
+
+    fixture
+        .replace_build_command_script(formatdoc! {"
+            
+        "})
+        .unwrap();
+}
