@@ -1298,6 +1298,15 @@ fn build_succeeds_while_being_terminated() {
     fixture.write_source_file("trigger", "").unwrap();
 
     subject
+        .wait_stderr_contains("event: build: sent SIGTERM")
+        .unwrap();
+
+    subject
+        // TODO we don't really want this to be 2, but 0
+        .wait_stderr_contains("event: build: terminated with code Some(2)")
+        .unwrap();
+
+    subject
         .wait_stderr_contains("event: build: spawned pid ")
         .unwrap();
 }
