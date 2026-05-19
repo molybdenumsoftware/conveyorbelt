@@ -450,7 +450,9 @@ impl App {
                     browser,
                     ..
                 },
-                Event::Build(BuildEvent::TerminatedWithFailure(_)),
+                Event::Build(
+                    BuildEvent::TerminatedWithFailure(_) | BuildEvent::TerminatedSuccessfully,
+                ),
             ) => (
                 vec![Command::Build(BuildCommand::Spawn {
                     path: build_command_path.clone(),

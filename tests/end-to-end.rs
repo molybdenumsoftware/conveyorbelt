@@ -1290,7 +1290,7 @@ fn build_succeeds_while_being_terminated() {
         "#})
         .unwrap();
 
-    fixture.write_source_file("trigger", "").unwrap();
+    fixture.write_source_file("first trigger", "").unwrap();
 
     subject
         .wait_stderr_contains("event: build: spawned pid ")
@@ -1300,17 +1300,21 @@ fn build_succeeds_while_being_terminated() {
         .wait_stderr_contains("build: stdout: trap is set")
         .unwrap();
 
-    fixture.write_source_file("trigger", "").unwrap();
+    fixture.set_build_command_nu("").unwrap();
+
+    fixture.write_source_file("second trigger", "").unwrap();
 
     subject
-        .wait_stderr_contains("event: build: send SIGTERM")
+        .wait_stderr_contains("event: build: sent SIGTERM")
         .unwrap();
 
     subject
-        .wait_stderr_contains("event: build: terminated with code Some(0)")
+        .wait_stderr_contains("event: build: TerminatedSuccessfully")
         .unwrap();
 
     subject
         .wait_stderr_contains("event: build: spawned pid ")
         .unwrap();
 }
+
+// TODO maybe test for terminatedwithfailure None
