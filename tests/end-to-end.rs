@@ -192,6 +192,39 @@ impl NuScript {
 #[derive(Debug, derive_more::Deref, derive_more::DerefMut)]
 struct NuExecutable(TempPath);
 
+// TODO deduplicate with NuScript
+#[derive(Debug, Clone)]
+struct BashScript(String);
+
+impl BashScript {
+    fn new(content: impl Into<String>) -> Self {
+        const BASH_EXECUTABLE: &str = env!("BASH_EXECUTABLE");
+        let content = content.into();
+
+        let content = formatdoc! {r#"
+            #! {BASH_EXECUTABLE}
+            {content}
+        "#};
+
+        Self(content)
+    }
+
+    fn into_executable(self) -> anyhow::Result<BashExecutable> {
+        let mut temp_file = tempfile::Builder::new()
+            .permissions(Permissions::from_mode(0o755))
+            .suffix(".nu")
+            .tempfile()
+            .context("temporary build command file")?;
+
+        temp_file.as_file_mut().write_all(self.0.as_bytes())?;
+
+        Ok(BashExecutable(temp_file.into_temp_path()))
+    }
+}
+
+#[derive(Debug, derive_more::Deref, derive_more::DerefMut)]
+struct BashExecutable(TempPath);
+
 #[derive(Debug)]
 struct DBusSession(#[allow(dead_code)] DroppyChild);
 
@@ -394,9 +427,15 @@ impl Fixture {
         Ok(fixture)
     }
 
-    fn replace_build_command_script(&mut self, script: impl Into<String>) -> anyhow::Result<()> {
+    fn set_build_command_nu(&mut self, script: impl Into<String>) -> anyhow::Result<()> {
         let path = &self.build_command.0;
-        fs::write(path, NuScript::new(script.into()).0).context("write build command")?;
+        fs::write(path, NuScript::new(script.into()).0).context("write build command nu")?;
+        Ok(())
+    }
+
+    fn set_build_command_bash(&self, formatdoc: String) -> _ {
+        let path = &self.build_command.0;
+        fs::write(path, BashScript::new(script.into()).0).context("write build command bash")?;
         Ok(())
     }
 
@@ -927,7 +966,7 @@ fn subsequent_build_terminated_with_failure() {
 
     subject.wait_browser_spawned().unwrap();
 
-    fixture.replace_build_command_script("exit 1").unwrap();
+    fixture.set_build_command_nu("exit 1").unwrap();
 
     fixture.write_source_file("trigger", "").unwrap();
 
@@ -950,7 +989,7 @@ async fn build_process_restart() {
     subject.wait_browser_spawned().unwrap();
 
     fixture
-        .replace_build_command_script(indoc! {"
+        .set_build_command_nu(indoc! {"
             loop {
                 print -e 'looping'
                 sleep 20sec
@@ -964,9 +1003,7 @@ async fn build_process_restart() {
         .wait_stderr_contains("build: stderr: looping")
         .unwrap();
 
-    fixture
-        .replace_build_command_script("print -e hello")
-        .unwrap();
+    fixture.set_build_command_nu("print -e hello").unwrap();
 
     fixture.write_source_file("trigger-again", "").unwrap();
 
@@ -1001,7 +1038,7 @@ fn initial_build_command_not_executable() {
 fn initial_build_fail() {
     let mut fixture = Fixture::init().unwrap();
 
-    fixture.replace_build_command_script("exit 1").unwrap();
+    fixture.set_build_command_nu("exit 1").unwrap();
 
     let mut subject = fixture.spawn_subject().unwrap();
 
@@ -1018,7 +1055,7 @@ fn build_command_stderr() {
     let mut fixture = Fixture::init().unwrap();
 
     fixture
-        .replace_build_command_script("print -e 'some stderr line'")
+        .set_build_command_nu("print -e 'some stderr line'")
         .unwrap();
 
     let mut subject = fixture.spawn_subject().unwrap();
@@ -1032,7 +1069,7 @@ fn build_command_stderr() {
 fn build_command_stdout() {
     let mut fixture = Fixture::init().unwrap();
     fixture
-        .replace_build_command_script("print 'some stdout line'")
+        .set_build_command_nu("print 'some stdout line'")
         .unwrap();
     let mut subject = fixture.spawn_subject().unwrap();
 
@@ -1048,7 +1085,7 @@ fn build_failure_followed_by_success() {
 
     subject.wait_browser_spawned().unwrap();
 
-    fixture.replace_build_command_script("exit 1").unwrap();
+    fixture.set_build_command_nu("exit 1").unwrap();
 
     fixture.write_source_file("trigger", "").unwrap();
 
@@ -1056,7 +1093,7 @@ fn build_failure_followed_by_success() {
         .wait_stderr_contains("build: terminated with code Some(1)")
         .unwrap();
 
-    fixture.replace_build_command_script("exit 0").unwrap();
+    fixture.set_build_command_nu("exit 0").unwrap();
 
     fixture.write_source_file("trigger", "").unwrap();
 
@@ -1105,7 +1142,7 @@ fn build_not_executed_on_git_ignored_file_create() {
     let serve_path_str = serve_path.to_str().unwrap();
 
     fixture
-        .replace_build_command_script(format!("touch {serve_path_str}/foo-indicator"))
+        .set_build_command_nu(format!("touch {serve_path_str}/foo-indicator"))
         .unwrap();
 
     fixture.write_source_file("foo", "no trigger").unwrap();
@@ -1115,7 +1152,7 @@ fn build_not_executed_on_git_ignored_file_create() {
         .unwrap();
 
     fixture
-        .replace_build_command_script(format!("touch {serve_path_str}/bar-indicator"))
+        .set_build_command_nu(format!("touch {serve_path_str}/bar-indicator"))
         .unwrap();
 
     fixture.write_source_file("bar", "trigger").unwrap();
@@ -1139,7 +1176,7 @@ fn build_not_executed_on_git_ignored_file_modify() {
     let serve_path_str = serve_path.to_str().unwrap();
 
     fixture
-        .replace_build_command_script(format!("touch {serve_path_str}/foo-indicator"))
+        .set_build_command_nu(format!("touch {serve_path_str}/foo-indicator"))
         .unwrap();
 
     fixture.write_source_file("foo", "no trigger").unwrap();
@@ -1149,7 +1186,7 @@ fn build_not_executed_on_git_ignored_file_modify() {
         .unwrap();
 
     fixture
-        .replace_build_command_script(format!("touch {serve_path_str}/bar-indicator"))
+        .set_build_command_nu(format!("touch {serve_path_str}/bar-indicator"))
         .unwrap();
 
     fixture.write_source_file("bar", "trigger").unwrap();
@@ -1173,7 +1210,7 @@ fn build_not_executed_on_git_ignored_file_remove() {
     let serve_path_str = serve_path.to_str().unwrap();
 
     fixture
-        .replace_build_command_script(format!("touch {serve_path_str}/foo-indicator"))
+        .set_build_command_nu(format!("touch {serve_path_str}/foo-indicator"))
         .unwrap();
 
     fs::remove_file(fixture.src_path().join("foo")).unwrap();
@@ -1183,7 +1220,7 @@ fn build_not_executed_on_git_ignored_file_remove() {
         .unwrap();
 
     fixture
-        .replace_build_command_script(format!("touch {serve_path_str}/bar-indicator"))
+        .set_build_command_nu(format!("touch {serve_path_str}/bar-indicator"))
         .unwrap();
 
     fixture.write_source_file("bar", "trigger").unwrap();
@@ -1274,13 +1311,14 @@ fn build_succeeds_while_being_terminated() {
     subject.wait_browser_spawned().unwrap();
 
     fixture
-        .replace_build_command_script(formatdoc! {r#"
-            bash -c 'trap "exit 1" TERM; while true; do sleep 1; done'
+        .set_build_command_bash(formatdoc! {r#"
+            trap "exit 2" TERM
+            while true; do
+                sleep 1
+            done
         "#})
         .unwrap();
 
-    
-
     fixture.write_source_file("trigger", "").unwrap();
 
     subject
@@ -1292,5 +1330,4 @@ fn build_succeeds_while_being_terminated() {
     subject
         .wait_stderr_contains("event: build: spawned pid ")
         .unwrap();
-    
 }
