@@ -1274,8 +1274,23 @@ fn build_succeeds_while_being_terminated() {
     subject.wait_browser_spawned().unwrap();
 
     fixture
-        .replace_build_command_script(formatdoc! {"
-            
-        "})
+        .replace_build_command_script(formatdoc! {r#"
+            bash -c 'trap "exit 1" TERM; while true; do sleep 1; done'
+        "#})
         .unwrap();
+
+    
+
+    fixture.write_source_file("trigger", "").unwrap();
+
+    subject
+        .wait_stderr_contains("event: build: spawned pid ")
+        .unwrap();
+
+    fixture.write_source_file("trigger", "").unwrap();
+
+    subject
+        .wait_stderr_contains("event: build: spawned pid ")
+        .unwrap();
+    
 }
