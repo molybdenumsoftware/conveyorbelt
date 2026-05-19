@@ -1282,9 +1282,10 @@ fn build_succeeds_while_being_terminated() {
 
     fixture
         .set_build_command_bash(formatdoc! {r#"
-            trap "exit 2" TERM
+            trap "exit 0" TERM
+            echo "trap is set"
             while true; do
-                sleep 1
+                read -r _
             done
         "#})
         .unwrap();
@@ -1295,15 +1296,18 @@ fn build_succeeds_while_being_terminated() {
         .wait_stderr_contains("event: build: spawned pid ")
         .unwrap();
 
+    subject
+        .wait_stderr_contains("build: stdout: trap is set")
+        .unwrap();
+
     fixture.write_source_file("trigger", "").unwrap();
 
     subject
-        .wait_stderr_contains("event: build: sent SIGTERM")
+        .wait_stderr_contains("event: build: send SIGTERM")
         .unwrap();
 
     subject
-        // TODO we don't really want this to be 2, but 0
-        .wait_stderr_contains("event: build: terminated with code Some(2)")
+        .wait_stderr_contains("event: build: terminated with code Some(0)")
         .unwrap();
 
     subject
