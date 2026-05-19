@@ -198,7 +198,7 @@ struct BashScript(String);
 
 impl BashScript {
     fn new(content: impl Into<String>) -> Self {
-        const BASH_EXECUTABLE: &str = env!("BASH_EXECUTABLE");
+        const BASH_EXECUTABLE: &str = env!("_BASH_EXECUTABLE");
         let content = content.into();
 
         let content = formatdoc! {r#"

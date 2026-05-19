@@ -16,6 +16,8 @@
     {
       checkEnv = {
         NU_EXECUTABLE = lib.getExe pkgs.nushell;
+        _BASH_EXECUTABLE = lib.getExe pkgs.bash;
+        FOO_EXECUTABLE = lib.getExe pkgs.bash;
         XVFB_EXECUTABLE = lib.getExe' pkgs.xorg-server "Xvfb";
         DBUS_DAEMON_EXECUTABLE = lib.getExe' pkgs.dbus "dbus-daemon";
         DBUS_SESSION_CONFIG_FILE = "${pkgs.dbus}/share/dbus-1/session.conf";
