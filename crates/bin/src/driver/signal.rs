@@ -11,9 +11,7 @@ pub(crate) enum SignalCommand {
 }
 
 #[derive(Debug, derive_more::Display)]
-pub(crate) enum SignalEvent {
-    #[display("received: {_0}")]
-    Received(SignalKind),
+pub(crate) enum SignalInstallEvent {
     #[display("handler installed")]
     HandlerInstalled,
     #[display("handler install fail")]

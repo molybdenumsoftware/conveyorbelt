@@ -19,6 +19,8 @@ use tokio::{
 };
 use tokio_stream::wrappers::ReceiverStream;
 
+// TODO this is not a driver?
+
 #[derive(Debug, derive_more::Deref)]
 pub(crate) struct ServeDir(TempDir);
 
@@ -64,48 +66,38 @@ pub(crate) enum ServerShutdownEvent {
     TaskJoinError(tokio::task::JoinError),
 }
 
-pub(crate) struct ServerDriver {
-    event_sender: mpsc::Sender<ServerEvent>,
-}
-
-impl ServerDriver {
-    pub(crate) fn new() -> (
-        SharedBoxedObservable<'static, ServerEvent, Infallible>,
-        Self,
-    ) {
-        let (event_sender, event_receiver) = mpsc::channel(1);
-        let driver = Self { event_sender };
-        (
-            Shared::from_stream(ReceiverStream::new(event_receiver)).box_it(),
-            driver,
-        )
-    }
+impl Server {
     pub(crate) fn spawn(
-        &self,
         serve_dir: Arc<ServeDir>,
     ) -> SharedBoxedObservable<'static, ServerSpawnEvent, Infallible> {
         todo!()
     }
 
-    pub(crate) fn effect(&self, command: ServerCommand) -> impl Future<Output = ()> + 'static {
-        let event_sender = self.event_sender.clone();
-        async move {
-            let event = match command {
-                ServerCommand::Spawn(serve_dir) => {
-                    match Server::spawn(serve_dir.path().to_path_buf()) {
-                        Ok(server) => ServerEvent::Spawn(server),
-                        Err(error) => ServerEvent::SpawnError(error),
-                    }
-                }
-                ServerCommand::Shutdown(server) => match server.shutdown().await {
-                    Ok(Ok(())) => ServerEvent::Shutdown,
-                    Ok(Err(error)) => ServerEvent::ShutdownError(error),
-                    Err(join_error) => ServerEvent::TaskJoinError(join_error),
-                },
-            };
-            event_sender.send(event).await.unwrap();
-        }
+    pub(crate) fn shutdown(
+        self,
+    ) -> SharedBoxedObservable<'static, ServerShutdownEvent, Infallible> {
+        todo!()
     }
+
+    // pub(crate) fn effect(&self, command: ServerCommand) -> impl Future<Output = ()> + 'static {
+    //     let event_sender = self.event_sender.clone();
+    //     async move {
+    //         let event = match command {
+    //             ServerCommand::Spawn(serve_dir) => {
+    //                 match Server::spawn(serve_dir.path().to_path_buf()) {
+    //                     Ok(server) => ServerEvent::Spawn(server),
+    //                     Err(error) => ServerEvent::SpawnError(error),
+    //                 }
+    //             }
+    //             ServerCommand::Shutdown(server) => match server.shutdown().await {
+    //                 Ok(Ok(())) => ServerEvent::Shutdown,
+    //                 Ok(Err(error)) => ServerEvent::ShutdownError(error),
+    //                 Err(join_error) => ServerEvent::TaskJoinError(join_error),
+    //             },
+    //         };
+    //         event_sender.send(event).await.unwrap();
+    //     }
+    // }
 }
 
 #[derive(Debug)]
@@ -122,7 +114,7 @@ impl std::fmt::Display for Server {
 }
 
 impl Server {
-    fn spawn(path: PathBuf) -> anyhow::Result<Self> {
+    fn spawn_(path: PathBuf) -> anyhow::Result<Self> {
         let handler_opts = RequestHandlerOpts {
             root_dir: path.clone(),
             compression: false,
@@ -182,7 +174,7 @@ impl Server {
         self.address
     }
 
-    async fn shutdown(self) -> Result<Result<(), hyper::Error>, tokio::task::JoinError> {
+    async fn shutdown_(self) -> Result<Result<(), hyper::Error>, tokio::task::JoinError> {
         self.shutdown_sender.send(()).unwrap();
         self.join_handle.await
     }
