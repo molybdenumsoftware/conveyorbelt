@@ -38,20 +38,24 @@ impl ServeDir {
     }
 }
 
-#[derive(Debug, derive_more::Display)]
-pub(crate) enum ServerCommand {
-    #[display("spawn at {_0}")]
-    Spawn(Arc<ServeDir>),
-    #[display("shutdown")]
-    Shutdown(Server),
-}
+// #[derive(Debug, derive_more::Display)]
+// pub(crate) enum ServerCommand {
+//     #[display("spawn at {_0}")]
+//     Spawn(Arc<ServeDir>),
+//     #[display("shutdown")]
+//     Shutdown(Server),
+// }
 
 #[derive(Debug, derive_more::Display)]
-pub(crate) enum ServerEvent {
+pub(crate) enum ServerSpawnEvent {
     #[display("spawn error: {_0}")]
     SpawnError(anyhow::Error),
     #[display("spawn: {_0}")]
     Spawn(Server),
+}
+
+#[derive(Debug, derive_more::Display)]
+pub(crate) enum ServerShutdownEvent {
     #[display("shutdown")]
     Shutdown,
     #[display("shutdown error: {_0}")]
@@ -75,6 +79,12 @@ impl ServerDriver {
             Shared::from_stream(ReceiverStream::new(event_receiver)).box_it(),
             driver,
         )
+    }
+    pub(crate) fn spawn(
+        &self,
+        serve_dir: Arc<ServeDir>,
+    ) -> SharedBoxedObservable<'static, ServerSpawnEvent, Infallible> {
+        todo!()
     }
 
     pub(crate) fn effect(&self, command: ServerCommand) -> impl Future<Output = ()> + 'static {
