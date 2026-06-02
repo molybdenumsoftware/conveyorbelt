@@ -1,0 +1,82 @@
+[[bin]]
+name = "conveyorbelt"
+path = "src/main.rs"
+
+[dependencies.anyhow]
+workspace = true
+
+[dependencies.chromiumoxide]
+workspace = true
+
+[dependencies.clap]
+workspace = true
+
+[dependencies.ctrlc]
+workspace = true
+
+[dependencies.derive_more]
+workspace = true
+
+[dependencies.futures]
+workspace = true
+
+[dependencies.git2]
+workspace = true
+
+[dependencies.hyper]
+workspace = true
+
+[dependencies.nix]
+workspace = true
+
+[dependencies.notify]
+workspace = true
+
+[dependencies.replace_with]
+workspace = true
+
+[dependencies.rxrust]
+workspace = true
+
+[dependencies.serde]
+workspace = true
+
+[dependencies.serde_json]
+workspace = true
+
+[dependencies.static-web-server]
+workspace = true
+
+[dependencies.tempfile]
+workspace = true
+
+[dependencies.tokio]
+workspace = true
+
+[dependencies.tokio-stream]
+workspace = true
+
+[dependencies.tracing]
+workspace = true
+
+[dependencies.tracing-subscriber]
+workspace = true
+
+[dev-dependencies.indoc]
+workspace = true
+
+[dev-dependencies.maud]
+workspace = true
+
+[dev-dependencies.static_init]
+workspace = true
+
+[package]
+description = "A based web dev workflow; stack-agnostic, hand-coded, 🦀"
+name = "conveyorbelt"
+
+[package.edition]
+workspace = true
+
+[package.license]
+workspace = true

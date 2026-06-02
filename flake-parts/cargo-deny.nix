@@ -6,7 +6,7 @@
   ...
 }:
 {
-  cargoManifest.bin = [
+  binManifest.bin = [
     {
       name = config.metadata.title;
       path = "src/main.rs";
@@ -40,7 +40,8 @@
       checks.cargo-deny = craneLib.cargoDeny {
         src =
           [
-            config.filesets.manifest
+            config.filesets.workspaceManifest
+            config.filesets.binManifest
             config.filesets.lockFile
             (rootPath + "/${path_}")
           ]

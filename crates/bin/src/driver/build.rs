@@ -18,19 +18,14 @@ pub(crate) struct BuildDriver {
 
 #[derive(Debug, derive_more::Display)]
 pub(crate) enum BuildEvent {
-    #[display("spawned pid {_0}")]
+    #[display("spawn pid {_0}")]
     Spawn(Pid),
-    #[display("spawn error: {_0}")]
+    #[display("spawn error: {_0:#}")]
     SpawnError(anyhow::Error),
     #[display("{output}: {line}")]
-    OutputLine {
-        output: Output,
-        line: String,
-    },
-    // TODO is this converted to space case?
-    TerminatedSuccessfully,
-    #[display("terminated with code {_0:?}")]
-    TerminatedWithFailure(Option<i32>),
+    OutputLine { output: Output, line: String },
+    #[display("exited with {_0:?}")]
+    Exited(Option<i32>),
     #[display("error waiting for termination: {_0}")]
     WaitError(std::io::Error),
     #[display("error sending signal: {_0}")]
@@ -142,10 +137,7 @@ impl BuildDriver {
                     event_sender.send(BuildEvent::Spawn(pid)).await.unwrap();
 
                     let wait_event = match child.wait().await {
-                        Ok(exit_status) => match exit_status.success() {
-                            true => BuildEvent::TerminatedSuccessfully,
-                            false => BuildEvent::TerminatedWithFailure(exit_status.code()),
-                        },
+                        Ok(exit_status) => BuildEvent::Exited(exit_status.code()),
                         Err(error) => BuildEvent::WaitError(error),
                     };
 

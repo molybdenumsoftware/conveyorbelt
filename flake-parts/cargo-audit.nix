@@ -20,7 +20,8 @@
 
         src =
           [
-            config.filesets.manifest
+            config.filesets.workspaceManifest
+            config.filesets.binManifest
             config.filesets.lockFile
           ]
           |> lib.fileset.unions

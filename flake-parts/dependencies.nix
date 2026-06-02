@@ -10,22 +10,24 @@ let
   );
 in
 {
-  cargoManifest = {
+  workspaceManifest.workspace = {
+    members = [ "crates/*" ];
+
     dependencies =
       lib.genAttrs [
         "chromiumoxide"
         "futures"
-        "ignore-files"
+        "git2"
+        "indoc"
+        "maud"
         "notify"
         "serde"
         "serde_json"
         "static-web-server"
+        "static_init"
         "tempfile"
         "tokio-stream"
         "tracing"
-        "watchexec"
-        "watchexec-events"
-        "watchexec-filterer-ignore"
       ] (_: { })
       |> lib.mergeAttrs {
         clap.features = [ "derive" ];
@@ -61,17 +63,46 @@ in
         ];
       }
       |> applyDefaults;
+  };
+
+  binManifest = {
+    dependencies =
+      lib.genAttrs
+        [
+          "anyhow"
+          "chromiumoxide"
+          "clap"
+          "derive_more"
+          "tracing-subscriber"
+          "futures"
+          "git2"
+          "hyper"
+          "nix"
+          "notify"
+          "replace_with"
+          "rxrust"
+          "serde"
+          "serde_json"
+          "static-web-server"
+          "tempfile"
+          "tokio"
+          "tokio-stream"
+          "tracing"
+        ]
+        (_: {
+          workspace = true;
+        });
 
     dev-dependencies =
-      lib.genAttrs [
-        "indoc"
-        "maud"
-        "static_init"
-      ] (_: { })
-      |> lib.mergeAttrs {
-        sysinfo.features = [ "system" ];
-      }
-      |> applyDefaults;
+      lib.genAttrs
+        [
+          "indoc"
+          "maud"
+          "static_init"
+        ]
+        (_: {
+          workspace = true;
+        });
   };
 
   perSystem.buildEnv.RUSTFLAGS = "--cfg tokio_unstable";

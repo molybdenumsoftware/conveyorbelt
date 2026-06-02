@@ -18,13 +18,14 @@
       };
 
     filesets = {
-      manifest = rootPath + "/Cargo.toml";
+      workspaceManifest = rootPath + "/Cargo.toml";
+      binManifest = rootPath + "/crates/bin/Cargo.toml";
       lockFile = rootPath + "/Cargo.lock";
 
       sourceFiles = lib.fileset.unions [
-        (rootPath + "/common.rs")
-        (rootPath + "/src")
-        (rootPath + "/tests")
+        (rootPath + "/crates/bin/common.rs")
+        (rootPath + "/crates/bin/src")
+        (rootPath + "/crates/bin/tests")
       ];
     };
   };

@@ -4,7 +4,6 @@ use anyhow::{Context as _, anyhow, bail};
 use chromiumoxide::{
     BrowserConfig,
     cdp::browser_protocol::target::{CloseTargetParams, GetTargetsParams},
-    error::CdpError,
 };
 use rxrust::prelude::*;
 use tempfile::tempdir;
@@ -35,8 +34,6 @@ pub(crate) enum BrowserEvent {
     Reload(Browser),
     #[display("reload error: {_1}")]
     ReloadError(Browser, anyhow::Error),
-    #[display("CDP error: {_0}")]
-    CdpError(CdpError),
 }
 
 impl BrowserDriver {
@@ -57,12 +54,10 @@ impl BrowserDriver {
 
         async move {
             let event = match command {
-                BrowserCommand::Spawn { url: address } => {
-                    match Browser::spawn(address, event_sender.clone()).await {
-                        Ok(browser) => BrowserEvent::Spawn(browser),
-                        Err(error) => BrowserEvent::SpawnError(error),
-                    }
-                }
+                BrowserCommand::Spawn { url: address } => match Browser::spawn(address).await {
+                    Ok(browser) => BrowserEvent::Spawn(browser),
+                    Err(error) => BrowserEvent::SpawnError(error),
+                },
                 BrowserCommand::Reload(browser) => match browser.reload().await {
                     Ok(_) => BrowserEvent::Reload(browser),
                     Err(error) => BrowserEvent::ReloadError(browser, error),
@@ -90,13 +85,9 @@ impl Browser {
         self.handle.websocket_address().clone()
     }
 
-    pub(crate) async fn spawn(
-        url: String,
-        event_sender: tokio::sync::mpsc::Sender<BrowserEvent>,
-    ) -> anyhow::Result<Self> {
+    pub(crate) async fn spawn(url: String) -> anyhow::Result<Self> {
         let browser_data_dir = tempdir().context("failed to create temporary browser data dir")?;
 
-        // #TODO do not trace anywhere?
         debug!("browser data dir: {browser_data_dir:?}");
 
         let mut browser_config_builder = BrowserConfig::builder()
@@ -126,17 +117,7 @@ impl Browser {
             .id()
             .context("failed to obtain browser pid")?;
 
-        let event_sender = event_sender.clone();
-        tokio::spawn(async move {
-            while let Some(result) = handler.next().await {
-                if let Err(error) = result {
-                    event_sender
-                        .send(BrowserEvent::CdpError(error))
-                        .await
-                        .unwrap();
-                }
-            }
-        });
+        tokio::spawn(async move { while handler.next().await.is_some() {} });
 
         let targets = browser
             .execute(GetTargetsParams { filter: None })

@@ -18,7 +18,6 @@ use tokio::{
     task::JoinHandle,
 };
 use tokio_stream::wrappers::ReceiverStream;
-use tracing::info;
 
 #[derive(Debug, derive_more::Deref)]
 pub(crate) struct ServeDir(TempDir);
@@ -29,10 +28,12 @@ impl std::fmt::Display for ServeDir {
     }
 }
 
+// TODO observed strange output:
+// command: server: server at address 127.0.0.1:40521
+
 impl ServeDir {
     pub(crate) fn obtain() -> anyhow::Result<Self> {
         let temp_dir = TempDir::new()?;
-        info!("serve path: {temp_dir:?}");
         Ok(Self(temp_dir))
     }
 }
@@ -41,8 +42,8 @@ impl ServeDir {
 pub(crate) enum ServerCommand {
     #[display("spawn at {_0}")]
     Spawn(Arc<ServeDir>),
-    // TODO see how this formats
-    Terminate(Server),
+    #[display("shutdown")]
+    Shutdown(Server),
 }
 
 #[derive(Debug, derive_more::Display)]
@@ -51,10 +52,10 @@ pub(crate) enum ServerEvent {
     SpawnError(anyhow::Error),
     #[display("spawn: {_0}")]
     Spawn(Server),
-    #[display("terminated")]
-    Termination,
-    #[display("termination error: {_0}")]
-    TerminationError(hyper::Error),
+    #[display("shutdown")]
+    Shutdown,
+    #[display("shutdown error: {_0}")]
+    ShutdownError(hyper::Error),
     #[display("task join error: {_0}")]
     TaskJoinError(tokio::task::JoinError),
 }
@@ -86,9 +87,9 @@ impl ServerDriver {
                         Err(error) => ServerEvent::SpawnError(error),
                     }
                 }
-                ServerCommand::Terminate(server) => match server.shutdown().await {
-                    Ok(Ok(())) => ServerEvent::Termination,
-                    Ok(Err(error)) => ServerEvent::TerminationError(error),
+                ServerCommand::Shutdown(server) => match server.shutdown().await {
+                    Ok(Ok(())) => ServerEvent::Shutdown,
+                    Ok(Err(error)) => ServerEvent::ShutdownError(error),
                     Err(join_error) => ServerEvent::TaskJoinError(join_error),
                 },
             };
@@ -140,12 +141,6 @@ impl Server {
         let address = SocketAddr::from((IpAddr::V4(Ipv4Addr::LOCALHOST), 0));
         let listener =
             TcpListener::bind(address).with_context(|| format!("failed to bind to {address}"))?;
-
-        let serve_address = listener.local_addr().with_context(|| {
-            format!("could not get local socket address of listener {listener:?}")
-        })?;
-
-        info!("serving address: {serve_address}");
 
         listener.set_nonblocking(true).with_context(|| {
             format!("could not set TCP stream non-blocking for listener {listener:?}")

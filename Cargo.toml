@@ -1,129 +1,114 @@
-[[bin]]
-name = "conveyorbelt"
-path = "src/main.rs"
+[workspace]
+members = ["crates/*"]
+resolver = "3"
 
-[dependencies.anyhow]
+[workspace.dependencies.anyhow]
 default-features = false
 features = ["backtrace", "std"]
 version = "*"
 
-[dependencies.chromiumoxide]
+[workspace.dependencies.chromiumoxide]
 default-features = false
 version = "*"
 
-[dependencies.clap]
+[workspace.dependencies.clap]
 default-features = false
 features = ["derive"]
 version = "*"
 
-[dependencies.derive_more]
+[workspace.dependencies.ctrlc]
+default-features = false
+features = ["termination"]
+version = "*"
+
+[workspace.dependencies.derive_more]
 default-features = false
 features = ["deref", "deref_mut", "display"]
 version = "*"
 
-[dependencies.futures]
+[workspace.dependencies.futures]
 default-features = false
 version = "*"
 
-[dependencies.hyper]
+[workspace.dependencies.git2]
+default-features = false
+version = "*"
+
+[workspace.dependencies.hyper]
 default-features = false
 features = ["http1", "server"]
 version = "0"
 
-[dependencies.ignore-files]
+[workspace.dependencies.indoc]
 default-features = false
 version = "*"
 
-[dependencies.nix]
+[workspace.dependencies.maud]
+default-features = false
+version = "*"
+
+[workspace.dependencies.nix]
 default-features = false
 features = ["signal"]
 version = "*"
 
-[dependencies.notify]
+[workspace.dependencies.notify]
 default-features = false
 version = "*"
 
-[dependencies.process-wrap]
+[workspace.dependencies.process-wrap]
 default-features = false
 features = ["tokio1"]
 version = "*"
 
-[dependencies.replace_with]
+[workspace.dependencies.replace_with]
 default-features = false
 features = ["std"]
 version = "*"
 
-[dependencies.rxrust]
+[workspace.dependencies.rxrust]
 default-features = false
 features = ["scheduler"]
 version = "1.0.0-rc.3"
 
-[dependencies.serde]
+[workspace.dependencies.serde]
 default-features = false
 version = "*"
 
-[dependencies.serde_json]
+[workspace.dependencies.serde_json]
 default-features = false
 version = "*"
 
-[dependencies.static-web-server]
+[workspace.dependencies.static-web-server]
 default-features = false
 version = "*"
 
-[dependencies.tempfile]
+[workspace.dependencies.static_init]
 default-features = false
 version = "*"
 
-[dependencies.tokio]
+[workspace.dependencies.tempfile]
+default-features = false
+version = "*"
+
+[workspace.dependencies.tokio]
 default-features = false
 features = ["io-util", "process"]
 version = "*"
 
-[dependencies.tokio-stream]
+[workspace.dependencies.tokio-stream]
 default-features = false
 version = "*"
 
-[dependencies.tracing]
+[workspace.dependencies.tracing]
 default-features = false
 version = "*"
 
-[dependencies.tracing-subscriber]
+[workspace.dependencies.tracing-subscriber]
 default-features = false
 features = ["env-filter"]
 version = "*"
 
-[dependencies.watchexec]
-default-features = false
-version = "*"
-
-[dependencies.watchexec-events]
-default-features = false
-version = "*"
-
-[dependencies.watchexec-filterer-ignore]
-default-features = false
-version = "*"
-
-[dev-dependencies.indoc]
-default-features = false
-version = "*"
-
-[dev-dependencies.maud]
-default-features = false
-version = "*"
-
-[dev-dependencies.static_init]
-default-features = false
-version = "*"
-
-[dev-dependencies.sysinfo]
-default-features = false
-features = ["system"]
-version = "*"
-
-[package]
-description = "A based web dev workflow; stack-agnostic, hand-coded, 🦀"
+[workspace.package]
 edition = "2024"
 license = "MIT"
-name = "conveyorbelt"
-version = "0.0.0"

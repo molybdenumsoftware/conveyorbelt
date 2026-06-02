@@ -13,7 +13,7 @@
   config = {
     flake-file.description = config.metadata.description;
 
-    cargoManifest.package = {
+    binManifest.package = {
       description = config.metadata.description;
       name = config.metadata.title;
     };

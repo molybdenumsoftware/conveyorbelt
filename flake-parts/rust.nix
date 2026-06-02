@@ -5,12 +5,24 @@
   ...
 }:
 {
-  options.cargoManifest = lib.mkOption { type = lib.types.anything; };
+  options = {
+    workspaceManifest = lib.mkOption { type = lib.types.anything; };
+    binManifest = lib.mkOption { type = lib.types.anything; };
+  };
 
   config = {
     flake-file.inputs.crane.url = "github:ipetkov/crane";
 
-    cargoManifest.package.edition = "2024";
+    binManifest = {
+      package = lib.genAttrs [ "edition" "license" ] (_name: {
+        workspace = true;
+      });
+    };
+
+    workspaceManifest.workspace = {
+      resolver = "3";
+      package.edition = "2024";
+    };
 
     perSystem =
       { pkgs, ... }:
@@ -29,7 +41,11 @@
           files.files = [
             {
               path_ = "Cargo.toml";
-              drv = pkgs.writers.writeTOML "Cargo.toml" config.cargoManifest;
+              drv = pkgs.writers.writeTOML "Cargo.toml" config.workspaceManifest;
+            }
+            {
+              path_ = "crates/bin/Cargo.toml";
+              drv = pkgs.writers.writeTOML "Cargo.toml" config.binManifest;
             }
           ];
 

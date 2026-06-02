@@ -8,7 +8,7 @@ in
     flake = false;
   };
 
-  cargoManifest.package.license = spdx;
+  workspaceManifest.workspace.package.license = spdx;
 
   perSystem =
     let
