@@ -17,23 +17,32 @@ pub(crate) struct BuildDriver {
 }
 
 #[derive(Debug, derive_more::Display)]
-pub(crate) enum BuildEvent {
-    #[display("spawn pid {_0}")]
-    Spawn(Pid),
-    #[display("spawn error: {_0:#}")]
-    SpawnError(anyhow::Error),
-    // --- ?
-    #[display("{output}: {line}")]
-    OutputLine { output: Output, line: String },
-    // ---
-    #[display("exited with {_0:?}")]
-    Exited(Option<i32>),
-    #[display("error waiting for termination: {_0}")]
-    WaitError(std::io::Error),
+pub(crate) enum BuildSignalEvent {
     #[display("error sending signal: {_0}")]
     SignalError(nix::errno::Errno),
     #[display("sent {_1} to {_0}")]
     SignalSent(Pid, Signal),
+}
+
+#[derive(Debug, derive_more::Display)]
+pub(crate) enum BuildWaitEvent {
+    #[display("{output}: {line}")]
+    OutputLine { output: Output, line: String },
+    #[display("exited with {_0:?}")]
+    Exited(Option<i32>),
+    #[display("error waiting for termination: {_0}")]
+    WaitError(std::io::Error),
+}
+
+#[derive(derive_more::Display)]
+pub(crate) enum BuildSpawnEvent {
+    #[display("spawn pid {pid}")]
+    Spawn {
+        pid: Pid,
+        wait_events: SharedBoxedObservable<'static, BuildWaitEvent, Infallible>,
+    },
+    #[display("spawn error: {_0:#}")]
+    SpawnError(anyhow::Error),
 }
 
 #[derive(Debug, Clone, Copy, derive_more::Display)]
@@ -56,7 +65,17 @@ pub(crate) enum Output {
 // }
 
 impl BuildDriver {
-    pub(crate)
+    pub(crate) fn spawn(
+        path: PathBuf,
+        envs: Vec<(String, String)>,
+    ) -> SharedBoxedObservable<'static, BuildSpawnEvent, Infallible> {
+        todo!()
+    }
+
+    pub(crate) fn signal(pid: Pid) -> SharedBoxedObservable<'static, BuildSignalEvent, Infallible> {
+        todo!()
+    }
+
     // pub(crate) fn new() -> (SharedBoxedObservable<'static, BuildEvent, Infallible>, Self) {
     //     let (event_sender, event_receiver) = mpsc::channel(1);
     //     let driver = Self { event_sender };
