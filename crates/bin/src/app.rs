@@ -11,7 +11,7 @@ use crate::{
         browser::{Browser, BrowserCommand, BrowserEvent},
         build::{BuildCommand, BuildEvent},
         fswatch::{FsChange, FsWatchCommand, FsWatchEvent},
-        server::{ServeDir, Server, ServerCommand, ServerEvent},
+        server::{ServeDir, ServerCommand, ServerDriver, ServerEvent},
         signal::{SignalCommand, SignalEvent},
     },
 };
@@ -23,32 +23,32 @@ enum State {
     InstallingSignalHandler,
     Initializing {
         initial_build: InitialBuildState,
-        server: Option<Server>,
+        server: Option<ServerDriver>,
         watcher: Option<INotifyWatcher>,
     },
     SpawningBrowser {
-        server: Server,
+        server: ServerDriver,
         watcher: INotifyWatcher,
     },
     Idle {
-        server: Server,
+        server: ServerDriver,
         watcher: INotifyWatcher,
         browser: Browser,
     },
     BuildSpawning {
-        server: Server,
+        server: ServerDriver,
         watcher: INotifyWatcher,
         browser: Browser,
     },
     BuildWaiting {
         pid: Pid,
         is_restarting: bool,
-        server: Server,
+        server: ServerDriver,
         watcher: INotifyWatcher,
         browser: Browser,
     },
     Reloading {
-        server: Server,
+        server: ServerDriver,
         watcher: INotifyWatcher,
     },
     ShuttingDown {
@@ -81,7 +81,7 @@ enum ShuttingDownWatcherState {
 
 impl State {
     fn shut_down(
-        server: Option<Server>,
+        server: Option<ServerDriver>,
         watcher: Option<INotifyWatcher>,
         code: i32,
     ) -> (Vec<Control>, State) {

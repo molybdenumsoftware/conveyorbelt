@@ -10,10 +10,10 @@ pub(crate) enum SignalCommand {
     InstallHandler,
 }
 
-#[derive(Debug, derive_more::Display)]
+#[derive(derive_more::Display)]
 pub(crate) enum SignalInstallEvent {
     #[display("handler installed")]
-    HandlerInstalled,
+    HandlerInstalled(SharedBoxedObservable<'static, SignalKind, Infallible>),
     #[display("handler install fail")]
     HandlerInstallFail(std::io::Error),
 }
@@ -26,73 +26,63 @@ pub(crate) enum SignalKind {
     Sigterm,
 }
 
-pub(crate) struct SignalDriver {
-    event_sender: mpsc::Sender<SignalEvent>,
-}
+pub(crate) struct SignalDriver;
 
 impl SignalDriver {
-    pub(crate) fn new() -> (
-        SharedBoxedObservable<'static, SignalEvent, Infallible>,
-        Self,
-    ) {
-        let (event_sender, event_receiver) = mpsc::channel(1);
-        let driver = Self { event_sender };
-        (
-            Shared::from_stream(ReceiverStream::new(event_receiver)).box_it(),
-            driver,
-        )
+    pub(crate) fn install() -> SharedBoxedObservable<'static, SignalInstallEvent, Infallible> {
+        todo!()
     }
 
-    pub(crate) fn effect(&self, command: SignalCommand) -> impl Future<Output = ()> + 'static {
-        let event_sender = self.event_sender.clone();
-        async move {
-            match command {
-                SignalCommand::InstallHandler => {
-                    let event_sender_clone = event_sender.clone();
+    // pub(crate) fn effect(&self, command: SignalCommand) -> impl Future<Output = ()> + 'static {
+    //     let event_sender = self.event_sender.clone();
+    //     async move {
+    //         match command {
+    //             SignalCommand::InstallHandler => {
+    //                 let event_sender_clone = event_sender.clone();
 
-                    let mut sigint =
-                        match signal::unix::signal(signal::unix::SignalKind::interrupt()) {
-                            Ok(signal) => signal,
-                            Err(error) => {
-                                event_sender
-                                    .send(SignalEvent::HandlerInstallFail(error))
-                                    .await
-                                    .unwrap();
-                                return;
-                            }
-                        };
+    //                 let mut sigint =
+    //                     match signal::unix::signal(signal::unix::SignalKind::interrupt()) {
+    //                         Ok(signal) => signal,
+    //                         Err(error) => {
+    //                             event_sender
+    //                                 .send(SignalEvent::HandlerInstallFail(error))
+    //                                 .await
+    //                                 .unwrap();
+    //                             return;
+    //                         }
+    //                     };
 
-                    let mut sigterm =
-                        match signal::unix::signal(signal::unix::SignalKind::terminate()) {
-                            Ok(signal) => signal,
-                            Err(error) => {
-                                event_sender
-                                    .send(SignalEvent::HandlerInstallFail(error))
-                                    .await
-                                    .unwrap();
-                                return;
-                            }
-                        };
+    //                 let mut sigterm =
+    //                     match signal::unix::signal(signal::unix::SignalKind::terminate()) {
+    //                         Ok(signal) => signal,
+    //                         Err(error) => {
+    //                             event_sender
+    //                                 .send(SignalEvent::HandlerInstallFail(error))
+    //                                 .await
+    //                                 .unwrap();
+    //                             return;
+    //                         }
+    //                     };
 
-                    tokio::spawn(async move {
-                        let event = tokio::select! {
-                            _ = sigint.recv() => {
-                                SignalEvent::Received(SignalKind::Sigint)
-                            },
-                            _ = sigterm.recv() => {
-                                SignalEvent::Received(SignalKind::Sigterm)
-                            }
-                        };
+    //                 tokio::spawn(async move {
+    //                     let event = tokio::select! {
+    //                         _ = sigint.recv() => {
+    //                             SignalEvent::Received(SignalKind::Sigint)
+    //                         },
+    //                         _ = sigterm.recv() => {
+    //                             SignalEvent::Received(SignalKind::Sigterm)
+    //                         }
+    //                     };
 
-                        event_sender_clone.send(event).await.unwrap();
-                    });
+    //                     event_sender_clone.send(event).await.unwrap();
+    //                 });
 
-                    event_sender
-                        .send(SignalEvent::HandlerInstalled)
-                        .await
-                        .unwrap();
-                }
-            };
-        }
-    }
+    //                 event_sender
+    //                     .send(SignalEvent::HandlerInstalled)
+    //                     .await
+    //                     .unwrap();
+    //             }
+    //         };
+    //     }
+    // }
 }

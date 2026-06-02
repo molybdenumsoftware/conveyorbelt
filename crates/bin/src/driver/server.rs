@@ -53,7 +53,7 @@ pub(crate) enum ServerSpawnEvent {
     #[display("spawn error: {_0}")]
     SpawnError(anyhow::Error),
     #[display("spawn: {_0}")]
-    Spawn(Server),
+    Spawn(ServerDriver),
 }
 
 #[derive(Debug, derive_more::Display)]
@@ -66,7 +66,7 @@ pub(crate) enum ServerShutdownEvent {
     TaskJoinError(tokio::task::JoinError),
 }
 
-impl Server {
+impl ServerDriver {
     pub(crate) fn spawn(
         serve_dir: Arc<ServeDir>,
     ) -> SharedBoxedObservable<'static, ServerSpawnEvent, Infallible> {
@@ -101,19 +101,19 @@ impl Server {
 }
 
 #[derive(Debug)]
-pub(crate) struct Server {
+pub(crate) struct ServerDriver {
     address: SocketAddr,
     shutdown_sender: oneshot::Sender<()>,
     join_handle: JoinHandle<hyper::Result<()>>,
 }
 
-impl std::fmt::Display for Server {
+impl std::fmt::Display for ServerDriver {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(f, "server at address {}", self.address)
     }
 }
 
-impl Server {
+impl ServerDriver {
     fn spawn_(path: PathBuf) -> anyhow::Result<Self> {
         let handler_opts = RequestHandlerOpts {
             root_dir: path.clone(),

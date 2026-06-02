@@ -40,8 +40,8 @@ async fn async_main() -> anyhow::Result<()> {
     // TODO driver?
     let project_root = crate::project_path::resolve(&std::env::current_dir()?)?;
 
-    let (signal_events, signal_driver) = SignalDriver::new();
-    let (server_events, server_driver) = ServerDriver::new();
+    // let (signal_events, signal_driver) = SignalDriver::new();
+    // let (server_events, server_driver) = ServerDriver::new();
     let (build_events, build_driver) = BuildDriver::new();
     let (browser_events, browser_driver) = BrowserDriver::new();
     let (fs_watch_events, fs_watch_driver) = FsWatchDriver::new();
