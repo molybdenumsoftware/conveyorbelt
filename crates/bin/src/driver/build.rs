@@ -12,27 +12,7 @@ use tokio_stream::wrappers::ReceiverStream;
 
 use crate::common::ForStdoutputLine as _;
 
-pub(crate) struct BuildDriver {
-    event_sender: mpsc::Sender<BuildEvent>,
-}
-
-#[derive(Debug, derive_more::Display)]
-pub(crate) enum BuildSignalEvent {
-    #[display("error sending signal: {_0}")]
-    SignalError(nix::errno::Errno),
-    #[display("sent {_1} to {_0}")]
-    SignalSent(Pid, Signal),
-}
-
-#[derive(Debug, derive_more::Display)]
-pub(crate) enum BuildWaitEvent {
-    #[display("{output}: {line}")]
-    OutputLine { output: Output, line: String },
-    #[display("exited with {_0:?}")]
-    Exited(Option<i32>),
-    #[display("error waiting for termination: {_0}")]
-    WaitError(std::io::Error),
-}
+pub(crate) struct BuildDriver;
 
 #[derive(derive_more::Display)]
 pub(crate) enum BuildSpawnEvent {
@@ -45,12 +25,30 @@ pub(crate) enum BuildSpawnEvent {
     SpawnError(anyhow::Error),
 }
 
+#[derive(Debug, derive_more::Display)]
+pub(crate) enum BuildWaitEvent {
+    #[display("{output}: {line}")]
+    OutputLine { output: Output, line: String },
+    #[display("exited with {_0:?}")]
+    Exited(Option<i32>),
+    #[display("error waiting for termination: {_0}")]
+    WaitError(std::io::Error),
+}
+
 #[derive(Debug, Clone, Copy, derive_more::Display)]
 pub(crate) enum Output {
     #[display("stdout")]
     Out,
     #[display("stderr")]
     Err,
+}
+
+#[derive(Debug, derive_more::Display)]
+pub(crate) enum BuildSignalEvent {
+    #[display("error sending signal: {_0}")]
+    SignalError(nix::errno::Errno),
+    #[display("sent {_1} to {_0}")]
+    SignalSent(Pid, Signal),
 }
 
 // #[derive(Debug, Clone, derive_more::Display)]
