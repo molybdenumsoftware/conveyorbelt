@@ -77,6 +77,11 @@ pub(crate) struct FsWatchDriver {
 }
 
 impl FsWatchDriver {
+    pub(crate) fn init(
+        path: &Path,
+    ) -> SharedBoxedObservable<'static, FsWatchInitEvent, Infallible> {
+        todo!()
+    }
     pub(crate) fn new() -> (
         SharedBoxedObservable<'static, FsWatchEvent, Infallible>,
         Self,
