@@ -58,7 +58,7 @@ impl BrowserSpawn {
     pub(crate) fn effect(self) -> SharedBoxedObservable<'static, BrowserSpawnEvent, Infallible> {
         let (event_sender, event_receiver) = mpsc::channel(1);
         tokio::spawn(async move {
-            let result: anyhow::Result<Self> = (async || {
+            let result: anyhow::Result<()> = (async || {
                 let browser_data_dir =
                     tempdir().context("failed to create temporary browser data dir")?;
 
@@ -117,12 +117,12 @@ impl BrowserSpawn {
                     })
                     .await
                     .context("close newtab page")?;
+                let websocket_address = browser.websocket_address().clone();
+                let page = browser.new_page(self.url).await.context("creating page")?;
+                let browser_reload = BrowserReload { page };
 
-                let handle = Box::leak(Box::new(browser));
-                // reload: BrowserReload,
-                // pid: u32,
-                // websocket_address: String,
-                Ok()
+                Box::leak(Box::new(browser));
+                Ok((browser_reload, pid, websocket_address))
             })()
             .await;
             let event = match result {
