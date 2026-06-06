@@ -7,6 +7,7 @@ use chromiumoxide::{
 };
 use rxrust::prelude::*;
 use tempfile::tempdir;
+use tokio::sync::mpsc;
 use tokio_stream::{StreamExt as _, wrappers::ReceiverStream};
 use tracing::debug;
 
@@ -62,66 +63,71 @@ impl Browser {
     pub(crate) fn spawn(
         url: String,
     ) -> SharedBoxedObservable<'static, BrowserSpawnEvent, Infallible> {
-        //     let (event_sender, event_receiver) = mpsc::channel(1);
-        tokio::spawn(async move {});
-        let browser_data_dir = tempdir().context("failed to create temporary browser data dir")?;
+        let (event_sender, event_receiver) = mpsc::channel(1);
+        tokio::spawn(async move {
+            let result: anyhow::Result<()> = (|| {
+                let browser_data_dir =
+                    tempdir().context("failed to create temporary browser data dir")?;
 
-        debug!("browser data dir: {browser_data_dir:?}");
+                debug!("browser data dir: {browser_data_dir:?}");
 
-        let mut browser_config_builder = BrowserConfig::builder()
-            .with_head()
-            .viewport(None)
-            .user_data_dir(browser_data_dir.path())
-            .port(0);
+                let mut browser_config_builder = BrowserConfig::builder()
+                    .with_head()
+                    .viewport(None)
+                    .user_data_dir(browser_data_dir.path())
+                    .port(0);
 
-        if std::env::var(TESTING_MODE).is_ok() {
-            browser_config_builder = browser_config_builder.launch_timeout(Duration::from_mins(15));
-        }
+                if std::env::var(TESTING_MODE).is_ok() {
+                    browser_config_builder =
+                        browser_config_builder.launch_timeout(Duration::from_mins(15));
+                }
 
-        let browser_config = browser_config_builder
-            .build()
-            .map_err(|e| anyhow!("failed to build browser config: {e}"))?;
+                let browser_config = browser_config_builder
+                    .build()
+                    .map_err(|e| anyhow!("failed to build browser config: {e}"))?;
 
-        debug!("browser config: {browser_config:?}");
+                debug!("browser config: {browser_config:?}");
 
-        let (mut browser, mut handler) = chromiumoxide::Browser::launch(browser_config)
-            .await
-            .context("failed to launch browser")?;
+                let (mut browser, mut handler) = chromiumoxide::Browser::launch(browser_config)
+                    .await
+                    .context("failed to launch browser")?;
 
-        let pid = browser
-            .get_mut_child()
-            .context("failed to obtain mutable reference to browser Child")?
-            .as_mut_inner()
-            .id()
-            .context("failed to obtain browser pid")?;
+                let pid = browser
+                    .get_mut_child()
+                    .context("failed to obtain mutable reference to browser Child")?
+                    .as_mut_inner()
+                    .id()
+                    .context("failed to obtain browser pid")?;
 
-        tokio::spawn(async move { while handler.next().await.is_some() {} });
+                tokio::spawn(async move { while handler.next().await.is_some() {} });
 
-        let targets = browser
-            .execute(GetTargetsParams { filter: None })
-            .await
-            .context("get targets")?;
+                let targets = browser
+                    .execute(GetTargetsParams { filter: None })
+                    .await
+                    .context("get targets")?;
 
-        let targets = targets.target_infos.as_slice();
+                let targets = targets.target_infos.as_slice();
 
-        let [target] = &targets else {
-            bail!("number of browser pages is not 1: {targets:?}");
-        };
+                let [target] = &targets else {
+                    bail!("number of browser pages is not 1: {targets:?}");
+                };
 
-        if target.url != "chrome://newtab/" {
-            bail!("unexpected browser page: {target:?}");
-        }
+                if target.url != "chrome://newtab/" {
+                    bail!("unexpected browser page: {target:?}");
+                }
 
-        // TODO phrase anyhow context method strings
+                // TODO phrase anyhow context method strings
 
-        browser
-            .execute(CloseTargetParams {
-                target_id: target.target_id.clone(),
-            })
-            .await
-            .context("close newtab page")?;
+                browser
+                    .execute(CloseTargetParams {
+                        target_id: target.target_id.clone(),
+                    })
+                    .await
+                    .context("close newtab page")?;
 
-        let page = browser.new_page(url).await.context("creating page")?;
+                let page = browser.new_page(url).await.context("creating page")?;
+            })();
+        });
 
         Ok(Self {
             handle: Box::leak(Box::new(browser)),
