@@ -64,6 +64,7 @@ impl InstallSignal {
 
             let signal_events =
                 Shared::from_stream(ReceiverStream::new(signal_event_receiver)).box_it();
+
             event_sender
                 .send(SignalInstallEvent::HandlerInstalled(signal_events))
                 .await

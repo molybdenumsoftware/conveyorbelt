@@ -19,7 +19,7 @@ use crate::{
         build::BuildDriver,
         fswatch::FsWatchDriver,
         server::{ServeDir, ServerDriver},
-        signal::SignalDriver,
+        signal::InstallSignal,
     },
 };
 
