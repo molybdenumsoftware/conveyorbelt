@@ -59,7 +59,11 @@ impl Browser {
         self.handle.websocket_address().clone()
     }
 
-    pub(crate) fn spawn(url: String) -> SharedBoxedObservable<'static, Self, Infallible> {
+    pub(crate) fn spawn(
+        url: String,
+    ) -> SharedBoxedObservable<'static, BrowserSpawnEvent, Infallible> {
+        //     let (event_sender, event_receiver) = mpsc::channel(1);
+        tokio::spawn(async move {});
         let browser_data_dir = tempdir().context("failed to create temporary browser data dir")?;
 
         debug!("browser data dir: {browser_data_dir:?}");
