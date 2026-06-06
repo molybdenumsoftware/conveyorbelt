@@ -14,6 +14,8 @@ use tracing::debug;
 use crate::common::TESTING_MODE;
 
 #[derive(Debug, derive_more::Display)]
+// TODO using observable that is known to have at most a single emit is suboptimal.
+// What's the alternative?
 pub(crate) enum BrowserCommand {
     #[display("spawn and go to {url}")]
     Spawn { url: String },
@@ -136,8 +138,16 @@ impl Browser {
         });
         Shared::from_stream(ReceiverStream::new(event_receiver)).box_it()
     }
+
     pub(crate) fn reload(&self) -> SharedBoxedObservable<'static, BrowserReloadEvent, Infallible> {
-        self.page.reload().await.context("reloading")?;
-        Ok(())
+        let (event_sender, event_receiver) = mpsc::channel(1);
+        tokio::spawn(async move {
+            let event = match self.page.reload().await.context("reloading") {
+                Ok(_) => todo!(),
+                Err(_) => todo!(),
+            };
+            event_sender.send(event).await.unwrap();
+        });
+        Shared::from_stream(ReceiverStream::new(event_receiver)).box_it()
     }
 }
