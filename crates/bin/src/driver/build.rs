@@ -93,11 +93,24 @@ impl BuildSpawn {
                 }
             };
 
+            let pid = match child.id().context("obtain build process id") {
+                Ok(pid) => Pid::from_raw(pid as i32),
+                Err(error) => {
+                    event_sender
+                        .send(BuildSpawnEvent::Error(error))
+                        .await
+                        .unwrap();
+
+                    return;
+                }
+            };
+
             let (wait_event_sender, wait_event_receiver) = mpsc::channel(1);
-            let event_sender_clone = event_sender.clone();
+            let wait_event_sender_clone = wait_event_sender.clone();
             let stdout_join_handle = child
                 .for_stdout_line(move |line| {
                     let line = line.to_owned();
+                    let wait_event_sender_clone = wait_event_sender_clone.clone();
                     async move {
                         wait_event_sender_clone
                             .send(BuildWaitEvent::OutputLine {
@@ -115,10 +128,10 @@ impl BuildSpawn {
             let stderr_join_handle = child
                 .for_stderr_line(move |line| {
                     let line = line.to_owned();
-                    let event_sender = event_sender_clone.clone();
+                    let wait_event_sender_clone = wait_event_sender_clone.clone();
                     async move {
-                        event_sender
-                            .send(BuildEvent::OutputLine {
+                        wait_event_sender_clone
+                            .send(BuildWaitEvent::OutputLine {
                                 output: Output::Err,
                                 line,
                             })
@@ -129,30 +142,25 @@ impl BuildSpawn {
                 })
                 .unwrap();
 
-            let pid = match child.id().context("obtain build process id") {
-                Ok(pid) => Pid::from_raw(pid as i32),
-                Err(error) => {
-                    event_sender
-                        .send(BuildEvent::SpawnError(error))
-                        .await
-                        .unwrap();
+            tokio::spawn(async move {
+                let wait_event = match child.wait().await {
+                    Ok(exit_status) => BuildWaitEvent::Exited(exit_status.code()),
+                    Err(error) => BuildWaitEvent::WaitError(error),
+                };
+                wait_event_sender.send(wait_event).await.unwrap();
+            });
 
-                    return;
-                }
-            };
+            let wait_events =
+                Shared::from_stream(ReceiverStream::new(wait_event_receiver)).box_it();
 
-            event_sender.send(BuildEvent::Spawn(pid)).await.unwrap();
-
-            let wait_event = match child.wait().await {
-                Ok(exit_status) => BuildEvent::Exited(exit_status.code()),
-                Err(error) => BuildEvent::WaitError(error),
-            };
+            event_sender
+                .send(BuildSpawnEvent::Spawn { pid, wait_events })
+                .await
+                .unwrap();
 
             // TODO await concurrently
             stderr_join_handle.await.unwrap();
             stdout_join_handle.await.unwrap();
-
-            event_sender.send(wait_event).await.unwrap();
         });
 
         Shared::from_stream(ReceiverStream::new(event_receiver)).box_it()
