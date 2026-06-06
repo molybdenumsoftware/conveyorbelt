@@ -143,14 +143,13 @@ impl BuildSpawn {
                 .unwrap();
 
             tokio::spawn(async move {
-                // TODO await concurrently
-                stderr_join_handle.await.unwrap();
-                stdout_join_handle.await.unwrap();
-
                 let wait_event = match child.wait().await {
                     Ok(exit_status) => BuildWaitEvent::Exited(exit_status.code()),
                     Err(error) => BuildWaitEvent::WaitError(error),
                 };
+                // TODO await concurrently
+                stdout_join_handle.await.unwrap();
+                stderr_join_handle.await.unwrap();
                 wait_event_sender.send(wait_event).await.unwrap();
             });
 
@@ -167,9 +166,11 @@ impl BuildSpawn {
     }
 }
 
+#[derive(Debug)]
+pub(crate) struct BuildSignal(Pid);
+
 impl BuildSignal {
-    pub(crate) fn signal(pid: Pid) -> SharedBoxedObservable<'static, BuildSignalEvent, Infallible> {
-        todo!()
+    pub(crate) fn effect(self) -> SharedBoxedObservable<'static, BuildSignalEvent, Infallible> {
         // if let Err(error) = nix::sys::signal::kill(pid, signal) {
         //     event_sender
         //         .send(BuildEvent::SignalError(error))

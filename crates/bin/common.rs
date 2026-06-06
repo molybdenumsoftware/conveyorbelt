@@ -29,7 +29,7 @@ pub(crate) trait ForStdoutputLine {
     fn for_stderr_line(
         &mut self,
         f: impl (FnMut(&str) -> Self::FnReturn) + Send + 'static,
-    ) -> Option<()>;
+    ) -> Option<Self::JoinHandle>;
     fn for_stdout_line(
         &mut self,
         f: impl (FnMut(&str) -> Self::FnReturn) + Send + 'static,
@@ -78,17 +78,17 @@ impl ForStdoutputLine for tokio::process::Child {
     fn for_stderr_line(
         &mut self,
         mut f: impl (FnMut(&str) -> Self::FnReturn) + Send + 'static,
-    ) -> Option<()> {
+    ) -> Option<Self::JoinHandle> {
         let child_stderr = self.stderr.take()?;
         let mut stderr_lines = tokio::io::BufReader::new(child_stderr).lines();
 
-        tokio::spawn(async move {
+        let join_handle = tokio::spawn(async move {
             while let Ok(Some(line)) = stderr_lines.next_line().await {
                 f(&line).await;
             }
         });
 
-        Some(())
+        Some(join_handle)
     }
 
     fn for_stdout_line(
