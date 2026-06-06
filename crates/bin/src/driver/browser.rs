@@ -24,6 +24,18 @@ pub(crate) enum BrowserCommand {
     Reload(Browser),
 }
 
+#[derive(derive_more::Display)]
+pub(crate) enum BrowserEvent {
+    #[display("spawned")]
+    Spawn(Browser),
+    #[display("spawn error: {_0}")]
+    SpawnError(anyhow::Error),
+    #[display("reloaded")]
+    Reload(Browser),
+    #[display("reload error: {_1}")]
+    ReloadError(Browser, anyhow::Error),
+}
+
 #[derive(Debug, derive_more::Display)]
 pub(crate) enum BrowserEvent {
     #[display("spawned")]
