@@ -30,7 +30,7 @@ impl InstallSignal {
                 Ok(signal) => signal,
                 Err(error) => {
                     event_sender
-                        .send(SignalEvent::HandlerInstallFail(error))
+                        .send(SignalInstallEvent::HandlerInstallFail(error))
                         .await
                         .unwrap();
                     return;
@@ -41,28 +41,31 @@ impl InstallSignal {
                 Ok(signal) => signal,
                 Err(error) => {
                     event_sender
-                        .send(SignalEvent::HandlerInstallFail(error))
+                        .send(SignalInstallEvent::HandlerInstallFail(error))
                         .await
                         .unwrap();
                     return;
                 }
             };
 
+            let (signal_event_sender, signal_event_receiver) = mpsc::channel(1);
             tokio::spawn(async move {
                 let event = tokio::select! {
                     _ = sigint.recv() => {
-                        SignalEvent::Received(SignalKind::Sigint)
+                        SignalKind::Sigint
                     },
                     _ = sigterm.recv() => {
-                        SignalEvent::Received(SignalKind::Sigterm)
+                        SignalKind::Sigterm
                     }
                 };
 
-                event_sender_clone.send(event).await.unwrap();
+                signal_event_sender.send(event).await.unwrap();
             });
 
+            let signal_events =
+                Shared::from_stream(ReceiverStream::new(signal_event_receiver)).box_it();
             event_sender
-                .send(SignalEvent::HandlerInstalled)
+                .send(SignalInstallEvent::HandlerInstalled(signal_events))
                 .await
                 .unwrap();
         });
