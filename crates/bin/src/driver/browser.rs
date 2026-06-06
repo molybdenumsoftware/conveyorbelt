@@ -5,7 +5,6 @@ use chromiumoxide::{
     BrowserConfig,
     cdp::browser_protocol::target::{CloseTargetParams, GetTargetsParams},
 };
-use nix::unistd::Pid;
 use rxrust::prelude::*;
 use tempfile::tempdir;
 use tokio::sync::mpsc;
@@ -119,12 +118,11 @@ impl BrowserSpawn {
                     .await
                     .context("close newtab page")?;
 
-                let page = browser.new_page(url).await.context("creating page")?;
-                Ok(Self {
-                    handle: Box::leak(Box::new(browser)),
-                    pid,
-                    page,
-                })
+                let handle = Box::leak(Box::new(browser));
+                // reload: BrowserReload,
+                // pid: u32,
+                // websocket_address: String,
+                Ok()
             })()
             .await;
             let event = match result {
