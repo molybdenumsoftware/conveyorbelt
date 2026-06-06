@@ -139,12 +139,12 @@ impl Browser {
         Shared::from_stream(ReceiverStream::new(event_receiver)).box_it()
     }
 
-    pub(crate) fn reload(&self) -> SharedBoxedObservable<'static, BrowserReloadEvent, Infallible> {
+    pub(crate) fn reload(self) -> SharedBoxedObservable<'static, BrowserReloadEvent, Infallible> {
         let (event_sender, event_receiver) = mpsc::channel(1);
         tokio::spawn(async move {
             let event = match self.page.reload().await.context("reloading") {
-                Ok(_) => todo!(),
-                Err(_) => todo!(),
+                Ok(_) => BrowserReloadEvent::Reload(self),
+                Err(err) => BrowserReloadEvent::ReloadError(self, err),
             };
             event_sender.send(event).await.unwrap();
         });
