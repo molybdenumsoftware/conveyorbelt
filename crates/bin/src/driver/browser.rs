@@ -13,10 +13,6 @@ use tracing::debug;
 
 use crate::common::TESTING_MODE;
 
-pub(crate) struct BrowserDriver {
-    event_sender: tokio::sync::mpsc::Sender<BrowserEvent>,
-}
-
 #[derive(Debug, derive_more::Display)]
 pub(crate) enum BrowserCommand {
     #[display("spawn and go to {url}")]
@@ -44,7 +40,6 @@ pub(crate) enum BrowserReloadEvent {
 // TODO should we be using the Observable types' error type argument?
 
 #[derive(Debug)]
-//pub(crate) struct Browser(&'static mut chromiumoxide::Browser);
 pub(crate) struct Browser {
     handle: &'static chromiumoxide::Browser,
     pid: u32,
@@ -65,7 +60,7 @@ impl Browser {
     ) -> SharedBoxedObservable<'static, BrowserSpawnEvent, Infallible> {
         let (event_sender, event_receiver) = mpsc::channel(1);
         tokio::spawn(async move {
-            let result: anyhow::Result<()> = (|| {
+            let result: anyhow::Result<Self> = (async || {
                 let browser_data_dir =
                     tempdir().context("failed to create temporary browser data dir")?;
 
@@ -126,16 +121,22 @@ impl Browser {
                     .context("close newtab page")?;
 
                 let page = browser.new_page(url).await.context("creating page")?;
-            })();
+                Ok(Self {
+                    handle: Box::leak(Box::new(browser)),
+                    pid,
+                    page,
+                })
+            })()
+            .await;
+            let event = match result {
+                Ok(browser) => BrowserSpawnEvent::Spawn(browser),
+                Err(err) => BrowserSpawnEvent::SpawnError(err),
+            };
+            event_sender.send(event).await.unwrap();
         });
-
-        Ok(Self {
-            handle: Box::leak(Box::new(browser)),
-            pid,
-            page,
-        })
+        Shared::from_stream(ReceiverStream::new(event_receiver)).box_it()
     }
-    pub(crate) async fn reload(&self) -> anyhow::Result<()> {
+    pub(crate) fn reload(&self) -> SharedBoxedObservable<'static, BrowserReloadEvent, Infallible> {
         self.page.reload().await.context("reloading")?;
         Ok(())
     }
