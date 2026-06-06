@@ -25,23 +25,15 @@ pub(crate) enum BrowserCommand {
 }
 
 #[derive(derive_more::Display)]
-pub(crate) enum BrowserEvent {
+pub(crate) enum BrowserSpawnEvent {
     #[display("spawned")]
     Spawn(Browser),
     #[display("spawn error: {_0}")]
     SpawnError(anyhow::Error),
-    #[display("reloaded")]
-    Reload(Browser),
-    #[display("reload error: {_1}")]
-    ReloadError(Browser, anyhow::Error),
 }
 
 #[derive(Debug, derive_more::Display)]
-pub(crate) enum BrowserEvent {
-    #[display("spawned")]
-    Spawn(Browser),
-    #[display("spawn error: {_0}")]
-    SpawnError(anyhow::Error),
+pub(crate) enum BrowserReloadEvent {
     #[display("reloaded")]
     Reload(Browser),
     #[display("reload error: {_1}")]
@@ -49,6 +41,7 @@ pub(crate) enum BrowserEvent {
 }
 
 impl BrowserDriver {
+    pub(crate) fn spawn(address: String) -> 
     pub(crate) fn new() -> (
         SharedBoxedObservable<'static, BrowserEvent, Infallible>,
         Self,
