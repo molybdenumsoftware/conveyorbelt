@@ -42,14 +42,6 @@ pub(crate) enum BrowserReloadEvent {
 
 // TODO should we be using the Observable types' error type argument?
 
-impl BrowserDriver {
-    pub(crate) fn spawn(
-        address: String,
-    ) -> SharedBoxedObservable<'static, BrowserSpawnEvent, Infallible> {
-        todo!()
-    }
-}
-
 #[derive(Debug)]
 //pub(crate) struct Browser(&'static mut chromiumoxide::Browser);
 pub(crate) struct Browser {
@@ -67,7 +59,7 @@ impl Browser {
         self.handle.websocket_address().clone()
     }
 
-    pub(crate) async fn spawn(url: String) -> anyhow::Result<Self> {
+    pub(crate) fn spawn(url: String) -> anyhow::Result<Self> {
         let browser_data_dir = tempdir().context("failed to create temporary browser data dir")?;
 
         debug!("browser data dir: {browser_data_dir:?}");
