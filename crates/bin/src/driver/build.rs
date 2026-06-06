@@ -51,8 +51,9 @@ pub(crate) enum Output {
 pub(crate) enum BuildSignalEvent {
     #[display("error sending signal: {_0}")]
     SignalError(nix::errno::Errno),
-    #[display("sent {_1} to {_0}")]
-    SignalSent(Pid, Signal),
+    // TODO: Review display
+    #[display("sent {_0}")]
+    SignalSent(Signal),
 }
 
 // #[derive(Debug, Clone, derive_more::Display)]
@@ -167,20 +168,27 @@ impl BuildSpawn {
 }
 
 #[derive(Debug)]
-pub(crate) struct BuildSignal(Pid);
+pub(crate) struct BuildSignal {
+    pid: Pid,
+    signal: Signal,
+}
 
 impl BuildSignal {
     pub(crate) fn effect(self) -> SharedBoxedObservable<'static, BuildSignalEvent, Infallible> {
-        // if let Err(error) = nix::sys::signal::kill(pid, signal) {
-        //     event_sender
-        //         .send(BuildEvent::SignalError(error))
-        //         .await
-        //         .unwrap();
-        // };
+        let (event_sender, event_receiver) = mpsc::channel(1);
+        tokio::spawn(async move {
+            if let Err(error) = nix::sys::signal::kill(self.pid, self.signal) {
+                event_sender
+                    .send(BuildSignalEvent::SignalError(error))
+                    .await
+                    .unwrap();
+            };
 
-        // event_sender
-        //     .send(BuildEvent::SignalSent(pid, SIGTERM))
-        //     .await
-        //     .unwrap();
+            event_sender
+                .send(BuildSignalEvent::SignalSent(SIGTERM))
+                .await
+                .unwrap();
+        });
+        Shared::from_stream(ReceiverStream::new(event_receiver)).box_it()
     }
 }
