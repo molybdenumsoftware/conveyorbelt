@@ -59,7 +59,7 @@ impl Browser {
         self.handle.websocket_address().clone()
     }
 
-    pub(crate) fn spawn(url: String) -> anyhow::Result<Self> {
+    pub(crate) fn spawn(url: String) -> SharedBoxedObservable<'static, Self, Infallible> {
         let browser_data_dir = tempdir().context("failed to create temporary browser data dir")?;
 
         debug!("browser data dir: {browser_data_dir:?}");
