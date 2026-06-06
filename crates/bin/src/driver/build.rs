@@ -143,6 +143,10 @@ impl BuildSpawn {
                 .unwrap();
 
             tokio::spawn(async move {
+                // TODO await concurrently
+                stderr_join_handle.await.unwrap();
+                stdout_join_handle.await.unwrap();
+
                 let wait_event = match child.wait().await {
                     Ok(exit_status) => BuildWaitEvent::Exited(exit_status.code()),
                     Err(error) => BuildWaitEvent::WaitError(error),
@@ -157,10 +161,6 @@ impl BuildSpawn {
                 .send(BuildSpawnEvent::Spawn { pid, wait_events })
                 .await
                 .unwrap();
-
-            // TODO await concurrently
-            stderr_join_handle.await.unwrap();
-            stdout_join_handle.await.unwrap();
         });
 
         Shared::from_stream(ReceiverStream::new(event_receiver)).box_it()
