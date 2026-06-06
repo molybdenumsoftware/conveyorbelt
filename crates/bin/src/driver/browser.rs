@@ -40,8 +40,15 @@ pub(crate) enum BrowserReloadEvent {
     ReloadError(Browser, anyhow::Error),
 }
 
+// TODO should we be using the Observable types' error type argument?
+
 impl BrowserDriver {
-    pub(crate) fn spawn(address: String) -> 
+    pub(crate) fn spawn(
+        address: String,
+    ) -> SharedBoxedObservable<'static, BrowserSpawnEvent, Infallible> {
+        todo!()
+    }
+
     pub(crate) fn new() -> (
         SharedBoxedObservable<'static, BrowserEvent, Infallible>,
         Self,
