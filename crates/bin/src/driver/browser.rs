@@ -5,6 +5,7 @@ use chromiumoxide::{
     BrowserConfig,
     cdp::browser_protocol::target::{CloseTargetParams, GetTargetsParams},
 };
+use nix::unistd::Pid;
 use rxrust::prelude::*;
 use tempfile::tempdir;
 use tokio::sync::mpsc;
@@ -20,13 +21,17 @@ pub(crate) enum BrowserCommand {
     #[display("spawn and go to {url}")]
     Spawn { url: String },
     #[display("reload")]
-    Reload(Browser),
+    Reload(BrowserReload),
 }
 
 #[derive(derive_more::Display)]
 pub(crate) enum BrowserSpawnEvent {
     #[display("spawned")]
-    Spawn(BrowserReload),
+    Spawn {
+        reload: BrowserReload,
+        pid: u32,
+        websocket_address: String,
+    },
     #[display("spawn error: {_0}")]
     SpawnError(anyhow::Error),
 }
@@ -34,9 +39,9 @@ pub(crate) enum BrowserSpawnEvent {
 #[derive(Debug, derive_more::Display)]
 pub(crate) enum BrowserReloadEvent {
     #[display("reloaded")]
-    Reload(Browser),
+    Reload(BrowserReload),
     #[display("reload error: {_1}")]
-    ReloadError(Browser, anyhow::Error),
+    ReloadError(BrowserReload, anyhow::Error),
 }
 
 // TODO should we be using the Observable types' error type argument?
@@ -133,22 +138,12 @@ impl BrowserSpawn {
 }
 
 #[derive(Debug)]
-pub(crate) struct Browser {
-    handle: &'static chromiumoxide::Browser,
-    pid: u32,
+pub(crate) struct BrowserReload {
     page: chromiumoxide::Page,
 }
 
-impl Browser {
-    pub(crate) fn pid(&self) -> u32 {
-        self.pid
-    }
-
-    pub(crate) fn debugging_address(&self) -> String {
-        self.handle.websocket_address().clone()
-    }
-
-    pub(crate) fn reload(self) -> SharedBoxedObservable<'static, BrowserReloadEvent, Infallible> {
+impl BrowserReload {
+    pub(crate) fn effect(self) -> SharedBoxedObservable<'static, BrowserReloadEvent, Infallible> {
         let (event_sender, event_receiver) = mpsc::channel(1);
         tokio::spawn(async move {
             let event = match self.page.reload().await.context("reloading") {
