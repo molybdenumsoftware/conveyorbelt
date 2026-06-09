@@ -21,6 +21,15 @@ use tokio_stream::wrappers::ReceiverStream;
 
 // TODO this is not a driver?
 
+mod foo {
+    fn foo() {
+        let obtain = ObtainServeDir();
+    }
+}
+
+#[derive(Debug)]
+pub(crate) struct ObtainServeDir();
+
 #[derive(Debug, derive_more::Deref)]
 pub(crate) struct ServeDir(TempDir);
 
@@ -165,10 +174,12 @@ impl ServerSpawn {
                 })
             })();
 
-            match result {
-                Ok(event) => event_sender.send(event).await.unwrap(),
-                Err(e) => 0,
-            }
+            let event = match result {
+                Ok(spawn) => spawn,
+                Err(error) => ServerSpawnEvent::SpawnError(error),
+            };
+
+            event_sender.send(event).await.unwrap()
         });
 
         Shared::from_stream(ReceiverStream::new(event_receiver)).box_it()
