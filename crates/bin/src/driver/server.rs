@@ -18,14 +18,32 @@ use tokio::{
     task::JoinHandle,
 };
 use tokio_stream::wrappers::ReceiverStream;
-// TODO this is not a driver?
 
 pub(crate) struct ObtainServeDir;
 
 impl ObtainServeDir {
     pub(crate) fn effect(self) -> SharedBoxedObservable<'static, ObtainServeDirEvent, Infallible> {
-        todo!()
+        let (event_sender, event_receiver) = mpsc::channel(1);
+
+        tokio::spawn(async move {
+            let event = match TempDir::new() {
+                Ok(dir) => ObtainServeDirEvent::Obtain(ServeDir(dir)),
+                Err(error) => ObtainServeDirEvent::Error(error),
+            };
+
+            event_sender.send(event).await.unwrap()
+        });
+
+        Shared::from_stream(ReceiverStream::new(event_receiver)).box_it()
     }
+}
+
+#[derive(derive_more::Display)]
+pub(crate) enum ObtainServeDirEvent {
+    #[display("serve dir obtained: {_0}")]
+    Obtain(ServeDir),
+    #[display("error obtaining serve dir: {_0}")]
+    Error(std::io::Error),
 }
 
 #[derive(Debug, derive_more::Deref)]
@@ -39,13 +57,6 @@ impl std::fmt::Display for ServeDir {
 
 // TODO observed strange output:
 // command: server: server at address 127.0.0.1:40521
-
-impl ServeDir {
-    pub(crate) fn obtain() -> anyhow::Result<Self> {
-        let temp_dir = TempDir::new()?;
-        Ok(Self(temp_dir))
-    }
-}
 
 // #[derive(Debug, derive_more::Display)]
 // pub(crate) enum ServerCommand {
@@ -74,28 +85,6 @@ pub(crate) enum ServerShutdownEvent {
     ShutdownError(hyper::Error),
     #[display("task join error: {_0}")]
     TaskJoinError(tokio::task::JoinError),
-}
-
-impl ServerDriver {
-    // pub(crate) fn effect(&self, command: ServerCommand) -> impl Future<Output = ()> + 'static {
-    //     let event_sender = self.event_sender.clone();
-    //     async move {
-    //         let event = match command {
-    //             ServerCommand::Spawn(serve_dir) => {
-    //                 match Server::spawn(serve_dir.path().to_path_buf()) {
-    //                     Ok(server) => ServerEvent::Spawn(server),
-    //                     Err(error) => ServerEvent::SpawnError(error),
-    //                 }
-    //             }
-    //             ServerCommand::Shutdown(server) => match server.shutdown().await {
-    //                 Ok(Ok(())) => ServerEvent::Shutdown,
-    //                 Ok(Err(error)) => ServerEvent::ShutdownError(error),
-    //                 Err(join_error) => ServerEvent::TaskJoinError(join_error),
-    //             },
-    //         };
-    //         event_sender.send(event).await.unwrap();
-    //     }
-    // }
 }
 
 #[derive(Debug)]
