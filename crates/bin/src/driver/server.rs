@@ -54,7 +54,7 @@ pub(crate) enum ServerSpawnEvent {
     SpawnError(anyhow::Error),
     #[display("server spawned; address: {address}")]
     Spawn {
-        address: Ipv4Addr,
+        address: SocketAddr,
         shutdown_effect: ServerShutdown,
     },
 }
@@ -154,13 +154,21 @@ impl ServerSpawn {
                         shutdown_signal.await.unwrap();
                     });
 
-                Ok(Self {
-                    join_handle: tokio::spawn(server_task),
+                let join_handle = tokio::spawn(server_task);
+
+                Ok(ServerSpawnEvent::Spawn {
                     address,
-                    shutdown_sender,
-                });
-                event_sender.send(event).await.unwrap();
+                    shutdown_effect: ServerShutdown {
+                        shutdown_sender,
+                        join_handle,
+                    },
+                })
             })();
+
+            match result {
+                Ok(event) => event_sender.send(event).await.unwrap(),
+                Err(e) => 0,
+            }
         });
 
         Shared::from_stream(ReceiverStream::new(event_receiver)).box_it()
