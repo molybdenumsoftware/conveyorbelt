@@ -81,115 +81,97 @@ pub(crate) enum FsChangeKind {
 }
 
 pub(crate) struct FsWatchInit {
-    path: PathBuf
-};
+    pub(crate) path: PathBuf,
+}
 
 impl FsWatchInit {
-    pub(crate) fn new(
-        path: PathBuf,
-    ) -> Self {
-        Self { path }
-    }
-
-    pub(crate) fn effect (self) -> SharedBoxedObservable<'static, FsWatchInitEvent, Infallible> {
-      let (event_sender, event_receiver) = mpsc::channel(1);
+    pub(crate) fn effect(self) -> SharedBoxedObservable<'static, FsWatchInitEvent, Infallible> {
+        let (event_sender, event_receiver) = mpsc::channel(1);
 
         tokio::spawn(async move {
-                    let event_sender_clone = event_sender.clone();
-                    let repository = match Repository::open_from_env() {
-                        Ok(repository) => repository,
-                        Err(error) => {
-                            event_sender_clone
-                                .blocking_send(FsWatchInitEvent::Git2Error(error))
-                                .unwrap();
-                            return;
-                        }
-                    };
-let event_handler = move |event| {
-                        let event: notify::Event = match event {
-                            Ok(event) => event,
-                            Err(error) => {
-                                event_sender_clone
-                                    .blocking_send(FsWatchEvent::EventError(error))
-                                    .unwrap();
-    
-                                return;
-                            }
-                        };
-    
-                        let kind = match event.kind {
-                            notify::EventKind::Create(kind) => FsChangeKind::Create(kind),
-                            notify::EventKind::Modify(notify::event::ModifyKind::Any) => {
-                                FsChangeKind::Modify(ModifyKind::Any)
-                            }
-                            notify::EventKind::Modify(notify::event::ModifyKind::Other) => {
-                                FsChangeKind::Modify(ModifyKind::Other)
-                            }
-                            notify::EventKind::Modify(notify::event::ModifyKind::Data(change)) => {
-                                FsChangeKind::Modify(ModifyKind::Data(change))
-                            }
-                            notify::EventKind::Modify(notify::event::ModifyKind::Name(rename)) => {
-                                FsChangeKind::Modify(ModifyKind::Name(rename))
-                            }
-                            notify::EventKind::Remove(kind) => FsChangeKind::Remove(kind),
-                            _ => return,
-                        };
-    
-                        for path in event.paths {
-                            let is_ignored = match repository.is_path_ignored(&path) {
-                                Ok(is_ignored) => is_ignored,
-                                Err(error) => {
-                                    event_sender_clone
-                                        .blocking_send(FsWatchEvent::Git2Error(error))
-                                        .unwrap();
-                                    return;
-                                }
-                            };
-    
-                            event_sender_clone
-                                .blocking_send(FsWatchEvent::Change(FsChange {
-                                    path,
-                                    kind,
-                                    is_ignored,
-                                }))
-                                .unwrap();
-                        }
-                    };
-
-        });
-
-        Shared::from_stream(ReceiverStream::new(event_receiver)).box_it() 
-    }
-
-    pub(crate) fn effect_(&self, command: FsWatchCommand) -> impl Future<Output = ()> + 'static {
-        let event_sender = self.event_sender.clone();
-        async move {
-            match command {
-                FsWatchCommand::Init(path_buf) => {
-    
-                    let mut watcher = match notify::recommended_watcher(event_handler) {
-                        Ok(watcher) => watcher,
-                        Err(error) => {
-                            event_sender
-                                .send(FsWatchEvent::WatcherCreationError(error))
-                                .await
-                                .unwrap();
-                            return;
-                        }
-                    };
-    
-                    if let Err(error) = watcher.watch(&path_buf, RecursiveMode::Recursive) {
-                        event_sender
-                            .send(FsWatchEvent::WatcherWatchError(error))
-                            .await
+            let event_sender_clone = event_sender.clone();
+            let repository = match Repository::open_from_env() {
+                Ok(repository) => repository,
+                Err(error) => {
+                    event_sender_clone
+                        .blocking_send(FsWatchInitEvent::Git2Error(error))
+                        .unwrap();
+                    return;
+                }
+            };
+            let event_handler = move |event| {
+                let event: notify::Event = match event {
+                    Ok(event) => event,
+                    Err(error) => {
+                        event_sender_clone
+                            .blocking_send(FsWatchInitEvent::EventError(error))
                             .unwrap();
+
+                        return;
                     }
-                    event_sender
-                        .send(FsWatchEvent::Watching(watcher))
-                        .await
+                };
+
+                let kind = match event.kind {
+                    notify::EventKind::Create(kind) => FsChangeKind::Create(kind),
+                    notify::EventKind::Modify(notify::event::ModifyKind::Any) => {
+                        FsChangeKind::Modify(ModifyKind::Any)
+                    }
+                    notify::EventKind::Modify(notify::event::ModifyKind::Other) => {
+                        FsChangeKind::Modify(ModifyKind::Other)
+                    }
+                    notify::EventKind::Modify(notify::event::ModifyKind::Data(change)) => {
+                        FsChangeKind::Modify(ModifyKind::Data(change))
+                    }
+                    notify::EventKind::Modify(notify::event::ModifyKind::Name(rename)) => {
+                        FsChangeKind::Modify(ModifyKind::Name(rename))
+                    }
+                    notify::EventKind::Remove(kind) => FsChangeKind::Remove(kind),
+                    _ => return,
+                };
+
+                for path in event.paths {
+                    let is_ignored = match repository.is_path_ignored(&path) {
+                        Ok(is_ignored) => is_ignored,
+                        Err(error) => {
+                            event_sender_clone
+                                .blocking_send(FsWatchEvent::Git2Error(error))
+                                .unwrap();
+                            return;
+                        }
+                    };
+
+                    event_sender_clone
+                        .blocking_send(FsWatchEvent::Change(FsChange {
+                            path,
+                            kind,
+                            is_ignored,
+                        }))
                         .unwrap();
                 }
+            };
+            let mut watcher = match notify::recommended_watcher(event_handler) {
+                Ok(watcher) => watcher,
+                Err(error) => {
+                    event_sender
+                        .send(FsWatchEvent::WatcherCreationError(error))
+                        .await
+                        .unwrap();
+                    return;
+                }
+            };
+
+            if let Err(error) = watcher.watch(&path_buf, RecursiveMode::Recursive) {
+                event_sender
+                    .send(FsWatchEvent::WatcherWatchError(error))
+                    .await
+                    .unwrap();
             }
-        }
+            event_sender
+                .send(FsWatchEvent::Watching(watcher))
+                .await
+                .unwrap();
+        });
+
+        Shared::from_stream(ReceiverStream::new(event_receiver)).box_it()
     }
 }
