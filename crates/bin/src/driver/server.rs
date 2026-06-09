@@ -18,17 +18,15 @@ use tokio::{
     task::JoinHandle,
 };
 use tokio_stream::wrappers::ReceiverStream;
-
 // TODO this is not a driver?
 
-mod foo {
-    fn foo() {
-        let obtain = ObtainServeDir();
+pub(crate) struct ObtainServeDir;
+
+impl ObtainServeDir {
+    pub(crate) fn effect(self) -> SharedBoxedObservable<'static, ObtainServeDirEvent, Infallible> {
+        todo!()
     }
 }
-
-#[derive(Debug)]
-pub(crate) struct ObtainServeDir();
 
 #[derive(Debug, derive_more::Deref)]
 pub(crate) struct ServeDir(TempDir);
