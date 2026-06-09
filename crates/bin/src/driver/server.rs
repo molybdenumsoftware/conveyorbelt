@@ -52,8 +52,11 @@ impl ServeDir {
 pub(crate) enum ServerSpawnEvent {
     #[display("spawn error: {_0}")]
     SpawnError(anyhow::Error),
-    #[display("spawn: {_0}")]
-    Spawn(ServerDriver),
+    #[display("server spawned; address: {address}")]
+    Spawn {
+        address: Ipv4Addr,
+        shutdown_effect: ServerShutdown,
+    },
 }
 
 #[derive(Debug, derive_more::Display)]
@@ -67,18 +70,6 @@ pub(crate) enum ServerShutdownEvent {
 }
 
 impl ServerDriver {
-    pub(crate) fn spawn(
-        serve_dir: Arc<ServeDir>,
-    ) -> SharedBoxedObservable<'static, ServerSpawnEvent, Infallible> {
-        todo!()
-    }
-
-    pub(crate) fn shutdown(
-        self,
-    ) -> SharedBoxedObservable<'static, ServerShutdownEvent, Infallible> {
-        todo!()
-    }
-
     // pub(crate) fn effect(&self, command: ServerCommand) -> impl Future<Output = ()> + 'static {
     //     let event_sender = self.event_sender.clone();
     //     async move {
@@ -101,81 +92,103 @@ impl ServerDriver {
 }
 
 #[derive(Debug)]
-pub(crate) struct ServerDriver {
-    address: SocketAddr,
+pub(crate) struct ServerSpawn {
+    serve_dir: PathBuf,
+}
+
+impl ServerSpawn {
+    pub(crate) fn new(serve_dir: PathBuf) -> Self {
+        Self { serve_dir }
+    }
+
+    pub(crate) fn effect(self) -> SharedBoxedObservable<'static, ServerSpawnEvent, Infallible> {
+        let (event_sender, event_receiver) = mpsc::channel(1);
+
+        tokio::spawn(async move {
+            let result = (move || {
+                let handler_opts = RequestHandlerOpts {
+                    root_dir: self.serve_dir.clone(),
+                    compression: false,
+                    compression_static: false,
+                    cors: None,
+                    security_headers: false,
+                    cache_control_headers: false,
+                    page404: self.serve_dir.join("404.html"),
+                    page50x: PathBuf::new(),
+                    index_files: ["index.html"].iter().map(|s| s.to_string()).collect(),
+                    log_remote_address: false,
+                    log_x_real_ip: false,
+                    log_forwarded_for: false,
+                    trusted_proxies: Vec::new(),
+                    redirect_trailing_slash: false,
+                    ignore_hidden_files: true,
+                    disable_symlinks: true,
+                    accept_markdown: false,
+                    health: false,
+                    maintenance_mode: false,
+                    maintenance_mode_status: StatusCode::SERVICE_UNAVAILABLE,
+                    maintenance_mode_file: PathBuf::new(),
+                    advanced_opts: None,
+                };
+
+                let address = SocketAddr::from((IpAddr::V4(Ipv4Addr::LOCALHOST), 0));
+                let listener = TcpListener::bind(address)
+                    .with_context(|| format!("failed to bind to {address}"))?;
+
+                listener.set_nonblocking(true).with_context(|| {
+                    format!("could not set TCP stream non-blocking for listener {listener:?}")
+                })?;
+
+                let failed_to_create_server_msg =
+                    format!("failed to create hyper server from listener {listener:?}");
+
+                let address = listener.local_addr()?;
+                let (shutdown_sender, shutdown_signal) = oneshot::channel();
+                let server_task = hyper::Server::from_tcp(listener)
+                    .context(failed_to_create_server_msg)?
+                    .tcp_nodelay(true)
+                    .serve(RouterService::new(RequestHandler {
+                        opts: Arc::from(handler_opts),
+                    }))
+                    .with_graceful_shutdown(async move {
+                        shutdown_signal.await.unwrap();
+                    });
+
+                Ok(Self {
+                    join_handle: tokio::spawn(server_task),
+                    address,
+                    shutdown_sender,
+                });
+                event_sender.send(event).await.unwrap();
+            })();
+        });
+
+        Shared::from_stream(ReceiverStream::new(event_receiver)).box_it()
+    }
+}
+
+#[derive(Debug)]
+pub(crate) struct ServerShutdown {
     shutdown_sender: oneshot::Sender<()>,
     join_handle: JoinHandle<hyper::Result<()>>,
 }
 
-impl std::fmt::Display for ServerDriver {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "server at address {}", self.address)
-    }
-}
+impl ServerShutdown {
+    pub(crate) fn effect(self) -> SharedBoxedObservable<'static, ServerShutdownEvent, Infallible> {
+        let (event_sender, event_receiver) = mpsc::channel(1);
 
-impl ServerDriver {
-    fn spawn_(path: PathBuf) -> anyhow::Result<Self> {
-        let handler_opts = RequestHandlerOpts {
-            root_dir: path.clone(),
-            compression: false,
-            compression_static: false,
-            cors: None,
-            security_headers: false,
-            cache_control_headers: false,
-            page404: path.join("404.html"),
-            page50x: PathBuf::new(),
-            index_files: ["index.html"].iter().map(|s| s.to_string()).collect(),
-            log_remote_address: false,
-            log_x_real_ip: false,
-            log_forwarded_for: false,
-            trusted_proxies: Vec::new(),
-            redirect_trailing_slash: false,
-            ignore_hidden_files: true,
-            disable_symlinks: true,
-            accept_markdown: false,
-            health: false,
-            maintenance_mode: false,
-            maintenance_mode_status: StatusCode::SERVICE_UNAVAILABLE,
-            maintenance_mode_file: PathBuf::new(),
-            advanced_opts: None,
-        };
+        tokio::spawn(async move {
+            self.shutdown_sender.send(()).unwrap();
 
-        let address = SocketAddr::from((IpAddr::V4(Ipv4Addr::LOCALHOST), 0));
-        let listener =
-            TcpListener::bind(address).with_context(|| format!("failed to bind to {address}"))?;
+            let event = match self.join_handle.await {
+                Ok(Ok(())) => ServerShutdownEvent::Shutdown,
+                Ok(Err(error)) => ServerShutdownEvent::ShutdownError(error),
+                Err(join_error) => ServerShutdownEvent::TaskJoinError(join_error),
+            };
 
-        listener.set_nonblocking(true).with_context(|| {
-            format!("could not set TCP stream non-blocking for listener {listener:?}")
-        })?;
+            event_sender.send(event).await.unwrap();
+        });
 
-        let failed_to_create_server_msg =
-            format!("failed to create hyper server from listener {listener:?}");
-
-        let address = listener.local_addr()?;
-        let (shutdown_sender, shutdown_signal) = oneshot::channel();
-        let server_task = hyper::Server::from_tcp(listener)
-            .context(failed_to_create_server_msg)?
-            .tcp_nodelay(true)
-            .serve(RouterService::new(RequestHandler {
-                opts: Arc::from(handler_opts),
-            }))
-            .with_graceful_shutdown(async move {
-                shutdown_signal.await.unwrap();
-            });
-
-        Ok(Self {
-            join_handle: tokio::spawn(server_task),
-            address,
-            shutdown_sender,
-        })
-    }
-
-    pub(crate) fn address(&self) -> SocketAddr {
-        self.address
-    }
-
-    async fn shutdown_(self) -> Result<Result<(), hyper::Error>, tokio::task::JoinError> {
-        self.shutdown_sender.send(()).unwrap();
-        self.join_handle.await
+        Shared::from_stream(ReceiverStream::new(event_receiver)).box_it()
     }
 }
