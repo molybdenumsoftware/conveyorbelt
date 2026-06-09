@@ -95,43 +95,17 @@ impl FsWatchInit {
       let (event_sender, event_receiver) = mpsc::channel(1);
 
         tokio::spawn(async move {
-
-            event_sender.send(event).await.unwrap()
-        });
-
-        Shared::from_stream(ReceiverStream::new(event_receiver)).box_it() 
-    }
-
-    // pub(crate) fn new() -> (
-    //     SharedBoxedObservable<'static, FsWatchEvent, Infallible>,
-    //     Self,
-    // ) {
-    //     let (event_sender, event_receiver) = mpsc::channel(1);
-    //     let driver = Self { event_sender };
-    //
-    //     (
-    //         Shared::from_stream(ReceiverStream::new(event_receiver)).box_it(),
-    //         driver,
-    //     )
-    // }
-
-    pub(crate) fn effect(&self, command: FsWatchCommand) -> impl Future<Output = ()> + 'static {
-        let event_sender = self.event_sender.clone();
-        async move {
-            match command {
-                FsWatchCommand::Init(path_buf) => {
                     let event_sender_clone = event_sender.clone();
                     let repository = match Repository::open_from_env() {
                         Ok(repository) => repository,
                         Err(error) => {
                             event_sender_clone
-                                .blocking_send(FsWatchEvent::Git2Error(error))
+                                .blocking_send(FsWatchInitEvent::Git2Error(error))
                                 .unwrap();
                             return;
                         }
                     };
-    
-                    let event_handler = move |event| {
+let event_handler = move |event| {
                         let event: notify::Event = match event {
                             Ok(event) => event,
                             Err(error) => {
@@ -181,6 +155,18 @@ impl FsWatchInit {
                                 .unwrap();
                         }
                     };
+
+        });
+
+        Shared::from_stream(ReceiverStream::new(event_receiver)).box_it() 
+    }
+
+    pub(crate) fn effect_(&self, command: FsWatchCommand) -> impl Future<Output = ()> + 'static {
+        let event_sender = self.event_sender.clone();
+        async move {
+            match command {
+                FsWatchCommand::Init(path_buf) => {
+    
                     let mut watcher = match notify::recommended_watcher(event_handler) {
                         Ok(watcher) => watcher,
                         Err(error) => {
