@@ -10,7 +10,8 @@ pub(crate) trait Effect<T, E: std::error::Error> {
     async fn effect(self) -> Result<T, E>;
     async fn call(self) -> Result<T, E>
     where
-        Self: Sized,
+        Self: Sized + std::fmt::Display,
+        Result<T, E>: std::fmt::Display,
     {
         info!("effect: {self}");
         let result = self.effect().await;
