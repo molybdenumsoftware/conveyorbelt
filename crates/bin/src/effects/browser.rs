@@ -31,6 +31,7 @@ pub(crate) enum BrowserReloadEvent {
     ReloadError(BrowserReload, anyhow::Error),
 }
 
+#[derive(Debug)]
 pub(crate) struct Browser {
     pub reload: BrowserReload,
     pid: u32,
@@ -59,7 +60,7 @@ pub(crate) struct BrowserSpawn {
 pub(crate) struct BrowserSpawnError(#[from] anyhow::Error);
 
 impl Effect<Browser, BrowserSpawnError> for BrowserSpawn {
-    async fn effect(self) -> Result<Browser, BrowserSpawnError> {
+    async fn effect(self) -> anyhow::Result<Browser> {
         let browser_data_dir = tempdir().context("create data dir")?;
         debug!("browser data dir: {browser_data_dir:?}");
 
@@ -100,14 +101,12 @@ impl Effect<Browser, BrowserSpawnError> for BrowserSpawn {
         let targets = targets.target_infos.as_slice();
 
         let [target] = &targets else {
-            bail!("number of browser pages is not 1: {targets:?}");
+            bail!("number of pages is not 1: {targets:?}");
         };
 
         if target.url != "chrome://newtab/" {
-            bail!("unexpected browser page: {target:?}");
+            bail!("unexpected page: {target:?}");
         }
-
-        // TODO phrase anyhow context method strings
 
         browser
             .execute(CloseTargetParams {
@@ -115,12 +114,17 @@ impl Effect<Browser, BrowserSpawnError> for BrowserSpawn {
             })
             .await
             .context("close newtab page")?;
+
         let websocket_address = browser.websocket_address().clone();
-        let page = browser.new_page(self.url).await.context("creating page")?;
+        let page = browser.new_page(self.url).await.context("create page")?;
         let browser_reload = BrowserReload { page };
 
         Box::leak(Box::new(browser));
-        Ok((browser_reload, pid, websocket_address))
+        Ok(Browser {
+            reload: browser_reload,
+            pid,
+            websocket_address,
+        })
     }
 }
 
