@@ -2,7 +2,7 @@ mod app;
 mod cli;
 #[path = "../common.rs"]
 mod common;
-mod driver;
+mod effects;
 mod logging;
 mod project_path;
 
@@ -14,7 +14,7 @@ use rxrust::prelude::*;
 use crate::{
     app::{App, Command, Control, Event},
     cli::Args,
-    driver::{
+    effects::{
         browser::BrowserDriver,
         build::BuildDriver,
         fswatch::FsWatchInit,

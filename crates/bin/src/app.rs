@@ -7,7 +7,7 @@ use tracing::{info, warn};
 
 use crate::{
     common::{SERVE_PATH, StateForTesting, TESTING_MODE},
-    driver::{
+    effects::{
         browser::{Browser, BrowserCommand, BrowserEvent},
         build::{BuildCommand, BuildEvent},
         fswatch::{FsChange, FsWatchCommand, FsWatchEvent},

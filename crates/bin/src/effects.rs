@@ -3,3 +3,5 @@ pub(crate) mod build;
 pub(crate) mod fswatch;
 pub(crate) mod server;
 pub(crate) mod signal;
+
+pub(crate) trait effect {}
