@@ -4,6 +4,6 @@ pub(crate) mod fswatch;
 pub(crate) mod server;
 pub(crate) mod signal;
 
-pub(crate) trait Effect {
-    fn wrapper_fn_with_default_impl() {}
+pub(crate) trait Effect<T, E: std::error::Error> {
+    async fn call(self) -> Result<T, E>;
 }

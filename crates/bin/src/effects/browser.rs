@@ -11,7 +11,7 @@ use tokio::sync::mpsc;
 use tokio_stream::{StreamExt as _, wrappers::ReceiverStream};
 use tracing::debug;
 
-use crate::common::TESTING_MODE;
+use crate::{common::TESTING_MODE, effects::Effect};
 
 #[derive(Debug, derive_more::Display)]
 // TODO using observable that is known to have at most a single emit is suboptimal.
@@ -47,14 +47,10 @@ pub(crate) enum BrowserReloadEvent {
 
 #[derive(Debug)]
 pub(crate) struct BrowserSpawn {
-    url: String,
+    pub(crate) url: String,
 }
 
-impl BrowserSpawn {
-    pub(crate) fn new(url: String) -> Self {
-        Self { url }
-    }
-
+impl Effect< for BrowserSpawn {
     pub(crate) fn effect(self) -> SharedBoxedObservable<'static, BrowserSpawnEvent, Infallible> {
         let (event_sender, event_receiver) = mpsc::channel(1);
         tokio::spawn(async move {
