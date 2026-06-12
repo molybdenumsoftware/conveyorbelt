@@ -25,7 +25,6 @@ pub(crate) enum BrowserCommand {
 
 #[derive(Debug)]
 pub(crate) struct Browser {
-    page: chromiumoxide::Page,
     pid: u32,
     websocket_address: String,
 }
@@ -37,12 +36,6 @@ impl Browser {
 
     pub(crate) fn websocket_address(&self) -> &str {
         &self.websocket_address
-    }
-
-    pub(crate) fn reload(&self) -> BrowserReload {
-        BrowserReload {
-            page: self.page.Clone(),
-        }
     }
 }
 
@@ -57,8 +50,8 @@ pub(crate) struct BrowserSpawn {
 #[display("browser spawn: {_0}")]
 pub(crate) struct BrowserSpawnError(#[from] anyhow::Error);
 
-impl Effect<Browser, BrowserSpawnError> for BrowserSpawn {
-    async fn effect(self) -> anyhow::Result<Browser> {
+impl Effect<(Browser, BrowserReload), BrowserSpawnError> for BrowserSpawn {
+    async fn effect(self) -> anyhow::Result<(Browser, BrowserReload)> {
         let browser_data_dir = tempdir().context("create data dir")?;
         debug!("browser data dir: {browser_data_dir:?}");
 
@@ -118,11 +111,13 @@ impl Effect<Browser, BrowserSpawnError> for BrowserSpawn {
         let browser_reload = BrowserReload { page };
 
         Box::leak(Box::new(browser));
-        Ok(Browser {
-            reload: browser_reload,
-            pid,
-            websocket_address,
-        })
+        Ok((
+            Browser {
+                pid,
+                websocket_address,
+            },
+            browser_reload,
+        ))
     }
 }
 
@@ -132,14 +127,14 @@ pub(crate) struct BrowserReload {
 }
 
 #[derive(Debug, derive_more::Display)]
-pub(crate) enum BrowserReloadEvent {
-    #[display("reloaded")]
-    Reload(BrowserReload),
-    #[display("reload error: {_1}")]
-    ReloadError(BrowserReload, anyhow::Error),
-}
+#[display("browser reloaded")]
+pub(crate) struct BrowserReloaded(BrowserReload);
 
-impl Effect<Browser, BrowserSpawnError> for BrowserReload {
+#[derive(Debug, derive_more::Display)]
+#[display("page reload error: {_1}")]
+pub(crate) struct PageReloadError(BrowserReload, anyhow::Error);
+
+impl Effect<BrowserReload, BrowserSpawnError> for BrowserReload {}
 
 impl BrowserReload {
     pub(crate) fn effect(self) -> SharedBoxedObservable<'static, BrowserReloadEvent, Infallible> {
