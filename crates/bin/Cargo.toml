@@ -11,9 +11,6 @@ workspace = true
 [dependencies.clap]
 workspace = true
 
-[dependencies.ctrlc]
-workspace = true
-
 [dependencies.derive_more]
 workspace = true
 

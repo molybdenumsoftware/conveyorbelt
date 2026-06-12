@@ -16,14 +16,9 @@ default-features = false
 features = ["derive"]
 version = "*"
 
-[workspace.dependencies.ctrlc]
-default-features = false
-features = ["termination"]
-version = "*"
-
 [workspace.dependencies.derive_more]
 default-features = false
-features = ["deref", "deref_mut", "display"]
+features = ["deref", "deref_mut", "display", "from"]
 version = "*"
 
 [workspace.dependencies.futures]

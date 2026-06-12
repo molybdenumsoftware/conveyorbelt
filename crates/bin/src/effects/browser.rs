@@ -54,14 +54,13 @@ pub(crate) struct BrowserSpawn {
     pub(crate) url: String,
 }
 
-#[derive(derive_more::Display)]
-#[display("browser spawn error: {_0}")]
-pub(crate) struct BrowserSpawnError(anyhow::Error);
+#[derive(derive_more::Display, derive_more::From)]
+#[display("browser spawn: {_0}")]
+pub(crate) struct BrowserSpawnError(#[from] anyhow::Error);
 
 impl Effect<Browser, BrowserSpawnError> for BrowserSpawn {
     async fn effect(self) -> Result<Browser, BrowserSpawnError> {
-        let browser_data_dir = tempdir().context("failed to create temporary browser data dir")?;
-
+        let browser_data_dir = tempdir().context("create data dir")?;
         debug!("browser data dir: {browser_data_dir:?}");
 
         let mut browser_config_builder = BrowserConfig::builder()
@@ -76,7 +75,7 @@ impl Effect<Browser, BrowserSpawnError> for BrowserSpawn {
 
         let browser_config = browser_config_builder
             .build()
-            .map_err(|e| anyhow!("failed to build browser config: {e}"))?;
+            .map_err(|e| anyhow!("build config: {e}"))?;
 
         debug!("browser config: {browser_config:?}");
 
