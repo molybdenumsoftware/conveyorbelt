@@ -11,11 +11,17 @@ pub(crate) trait Effect<T, E: std::error::Error> {
     async fn call(self) -> Result<T, E>
     where
         Self: Sized + std::fmt::Display,
-        Result<T, E>: std::fmt::Display,
+        T: std::fmt::Display,
+        E: std::fmt::Display,
     {
         info!("effect: {self}");
         let result = self.effect().await;
-        info!("result: {result}");
+
+        match result {
+            Ok(v) => info!("{v}"),
+            Err(err) => info!("{err}"),
+        };
+
         result
     }
 }

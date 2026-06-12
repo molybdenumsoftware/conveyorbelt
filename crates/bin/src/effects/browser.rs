@@ -23,12 +23,6 @@ pub(crate) enum BrowserCommand {
     Reload(BrowserReload),
 }
 
-#[derive(derive_more::Display)]
-pub(crate) enum BrowserSpawnEvent {
-    #[display("spawn error: {_0}")]
-    SpawnError(anyhow::Error),
-}
-
 #[derive(Debug, derive_more::Display)]
 pub(crate) enum BrowserReloadEvent {
     #[display("reloaded")]
@@ -60,7 +54,13 @@ pub(crate) struct BrowserSpawn {
     pub(crate) url: String,
 }
 
-impl Effect<Browser> for BrowserSpawn {
+#[derive(derive_more::Display)]
+pub(crate) struct BrowserSpawnEvent {
+    #[display("spawn error: {_0}")]
+    SpawnError(anyhow::Error),
+}
+
+impl Effect<Browser, BrowserSpawnError> for BrowserSpawn {
     pub(crate) fn effect(self) -> SharedBoxedObservable<'static, BrowserSpawnEvent, Infallible> {
         let (event_sender, event_receiver) = mpsc::channel(1);
         tokio::spawn(async move {
