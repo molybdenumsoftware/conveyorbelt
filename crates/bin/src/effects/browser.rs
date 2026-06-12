@@ -81,14 +81,14 @@ impl Effect<Browser, BrowserSpawnError> for BrowserSpawn {
 
         let (mut browser, mut handler) = chromiumoxide::Browser::launch(browser_config)
             .await
-            .context("failed to launch browser")?;
+            .context("launch")?;
 
         let pid = browser
             .get_mut_child()
-            .context("failed to obtain mutable reference to browser Child")?
+            .context("get child")?
             .as_mut_inner()
             .id()
-            .context("failed to obtain browser pid")?;
+            .context("get pid")?;
 
         tokio::spawn(async move { while handler.next().await.is_some() {} });
 
