@@ -43,6 +43,24 @@ pub(crate) enum BrowserReloadEvent {
     ReloadError(BrowserReload, anyhow::Error),
 }
 
+pub (crate) struct Browser {
+    pub reload: BrowserReload,
+    pid: u32,
+    websocket_address: String,
+
+    
+}
+
+impl Browser {
+    pub (crate) fn pid(&self) -> u32 {
+        self.pid
+    }
+
+    pub (crate) fn websocket_address(&self) -> u32 {
+        self.pid
+    }
+}
+
 // TODO should we be using the Observable types' error type argument?
 
 #[derive(Debug)]
