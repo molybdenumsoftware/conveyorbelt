@@ -209,31 +209,17 @@ impl App {
             })
             .switch_map(move |control| {
                 let Happy(serve_dir) = control else {
-                    return Shared::of(Exit(1)).box_it();
-                    panic!()
+                    let box_it = Shared::of(Exit(1)).box_it();
+                    return box_it;
                 };
 
-                let build_spawned = BuildSpawn {
-                    path: build_command_path.clone(),
-                    envs: vec![(
-                        SERVE_PATH.to_string(),
-                        serve_dir.path().to_str().unwrap().to_string(),
-                    )],
-                }
-                .effect();
-                // .map(Control::from);
-
-                let server_spawned = ServerSpawn {
-                    serve_dir: serve_dir.path().to_path_buf(),
-                }
-                .effect();
-
-                Shared::from_future(server_spawned)
+                let box_it = Shared::from_future(async { Ok("") })
                     .switch_map(|server| match server {
                         Ok(server) => Shared::of(Happy(server)).box_it(),
                         _ => Shared::of(Exit(1)).box_it(),
                     })
-                    .box_it()
+                    .box_it();
+                box_it
             })
             .tap(|v| {
                 //
