@@ -227,43 +227,13 @@ impl App {
                     serve_dir: serve_dir.path().to_path_buf(),
                 }
                 .effect();
-                // .map(Control::from);
-
-                let fs_events = FsWatchInit {
-                    path: project_root.clone(),
-                }
-                .effect();
-                // .map(|FsWatching(fs_events)| fs_events);
-                // .map(Control::from);
-
-                let droppables = Shared::from_future(
-                    async { tokio::try_join!(build_spawned, fs_events) }.boxed(),
-                );
 
                 Shared::from_future(server_spawned)
-                    .zip(droppables)
-                    .switch_map(|(server, droppables)| match (server, droppables) {
-                        (Ok(server), Ok((build, fs_watching))) => {
-                            Shared::of(Happy((server, build, fs_watching))).box_it()
-                        }
-                        (
-                            Ok(ServerSpawned {
-                                address,
-                                shutdown_effect,
-                            }),
-                            Err(_),
-                        ) => Shared::from_future(shutdown_effect.effect())
-                            .map(|_| Exit(1))
-                            .box_it(),
+                    .switch_map(|server| match server {
+                        Ok(server) => Shared::of(Happy(server)).box_it(),
                         _ => Shared::of(Exit(1)).box_it(),
                     })
                     .box_it()
-            })
-            .switch_map(|control| {
-                let Happy((s, b, f)) = control else {
-                    return Shared::of(Exit(1)).box_it();
-                };
-                todo!()
             })
             .tap(|v| {
                 //
