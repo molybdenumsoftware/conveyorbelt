@@ -26,15 +26,18 @@ in
         "static-web-server"
         "static_init"
         "tempfile"
+        "thiserror"
         "tokio-stream"
         "tracing"
       ] (_: { })
       |> lib.mergeAttrs {
         clap.features = [ "derive" ];
         derive_more.features = [
+          "debug"
           "deref"
           "deref_mut"
           "display"
+          "from"
         ];
         hyper = {
           features = [
@@ -85,6 +88,7 @@ in
           "serde_json"
           "static-web-server"
           "tempfile"
+          "thiserror"
           "tokio"
           "tokio-stream"
           "tracing"

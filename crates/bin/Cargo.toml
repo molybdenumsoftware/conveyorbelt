@@ -11,9 +11,6 @@ workspace = true
 [dependencies.clap]
 workspace = true
 
-[dependencies.ctrlc]
-workspace = true
-
 [dependencies.derive_more]
 workspace = true
 
@@ -48,6 +45,9 @@ workspace = true
 workspace = true
 
 [dependencies.tempfile]
+workspace = true
+
+[dependencies.thiserror]
 workspace = true
 
 [dependencies.tokio]

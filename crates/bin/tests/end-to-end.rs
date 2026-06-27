@@ -906,17 +906,13 @@ mod xvfb {
                 .spawn()
                 .context("spawn Xvfb")?;
 
-            process
-                .for_stdout_line(|line| {
-                    eprintln!("Xvfb stdout: {line}");
-                })
-                .unwrap();
+            process.for_stdout_line(|line| {
+                eprintln!("Xvfb stdout: {line}");
+            });
 
-            process
-                .for_stderr_line(|line| {
-                    eprintln!("Xvfb stderr: {line}");
-                })
-                .unwrap();
+            process.for_stderr_line(|line| {
+                eprintln!("Xvfb stderr: {line}");
+            });
 
             Ok(Self(DroppyChild::new(process)))
         }
@@ -983,17 +979,13 @@ mod dbus_session {
                 .stderr(Stdio::piped())
                 .spawn()?;
 
-            process
-                .for_stderr_line(|line| {
-                    eprintln!("dbus-daemon stderr: {line}");
-                })
-                .unwrap();
+            process.for_stderr_line(|line| {
+                eprintln!("dbus-daemon stderr: {line}");
+            });
 
-            process
-                .for_stdout_line(|line| {
-                    eprintln!("dbus-daemon stdout: {line}");
-                })
-                .unwrap();
+            process.for_stdout_line(|line| {
+                eprintln!("dbus-daemon stdout: {line}");
+            });
 
             Ok(Self(DroppyChild::new(process)))
         }
@@ -1191,14 +1183,12 @@ mod fixture {
             let stderr = Arc::new(Mutex::new(String::new()));
             let stderr_clone = Arc::clone(&stderr);
 
-            process
-                .for_stderr_line(move |line| {
-                    eprintln!("subject stderr: {line}");
-                    let mut lock = stderr_clone.lock().unwrap();
-                    lock.push_str(line);
-                    lock.push('\n');
-                })
-                .context("handling subject stderr")?;
+            process.for_stderr_line(move |line| {
+                eprintln!("subject stderr: {line}");
+                let mut lock = stderr_clone.lock().unwrap();
+                lock.push_str(line);
+                lock.push('\n');
+            });
 
             Ok(Subject::new(process, stderr))
         }
