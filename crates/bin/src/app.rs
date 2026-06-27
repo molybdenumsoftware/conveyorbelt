@@ -189,6 +189,10 @@ impl<T: Clone> Clone for Control<T> {
     }
 }
 
+fn foo() {
+    let box_it = Shared::empty().switch_map(|s| Shared::of("")).box_it();
+}
+
 impl App {
     pub(crate) fn run(self) -> SharedBoxedObservable<'static, i32, Infallible> {
         use Control::{Exit, Happy};
@@ -213,11 +217,8 @@ impl App {
                     return box_it;
                 };
 
-                let box_it = Shared::from_future(async { Ok("") })
-                    .switch_map(|server| match server {
-                        Ok(server) => Shared::of(Happy(server)).box_it(),
-                        _ => Shared::of(Exit(1)).box_it(),
-                    })
+                let box_it = Shared::from_future(async { "" })
+                    .switch_map(|s| Shared::of(s))
                     .box_it();
                 box_it
             })
