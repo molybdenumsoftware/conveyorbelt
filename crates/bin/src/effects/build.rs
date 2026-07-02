@@ -12,7 +12,7 @@ use tokio::{
 use tokio_stream::wrappers::ReceiverStream;
 
 use crate::{
-    common::ForStdoutputLine as _,
+    common::{ForStdoutputLine as _, SERVE_PATH},
     effects::{Effect, server::ServeDir},
 };
 
@@ -42,7 +42,7 @@ pub(crate) struct BuildSpawned {
 impl Effect<BuildSpawned, anyhow::Error> for BuildSpawn {
     async fn effect(self) -> Result<BuildSpawned, anyhow::Error> {
         let mut child = Command::new(self.path)
-            .envs(self.envs)
+            .env(SERVE_PATH, self.serve_dir.as_ref().path())
             .stdout(Stdio::piped())
             .stderr(Stdio::piped())
             .spawn()

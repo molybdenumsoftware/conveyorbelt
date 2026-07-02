@@ -27,9 +27,9 @@ impl Effect<ServeDir, anyhow::Error> for ObtainServeDir {
     }
 }
 
-#[derive(Debug, derive_more::Deref, derive_more::Display, derive_more::AsRef)]
+#[derive(Clone, Debug, derive_more::Deref, derive_more::Display)]
 #[display("serve dir: {_0:?}")]
-#[as_ref(forward)]
+#[deref(forward)]
 pub(crate) struct ServeDir(Arc<TempDir>);
 
 #[derive(Debug, derive_more::Display)]

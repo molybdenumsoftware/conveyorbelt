@@ -214,8 +214,8 @@ impl App {
 
                 let server_spawned = ServerSpawn { serve_dir }.call();
                 let initial_build = BuildSpawn {
-                    path: todo!(),
-                    envs: todo!(),
+                    path: self.build_command_path.clone(),
+                    serve_dir: serve_dir.clone(),
                 }
                 .call();
 
