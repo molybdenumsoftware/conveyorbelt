@@ -212,9 +212,12 @@ impl App {
                     return Shared::of(Exit(1)).box_it();
                 };
 
-
-                ServerSpawn {serve_dir}.call().box_it()
-
+                let server_spawned = ServerSpawn { serve_dir }.call();
+                let initial_build = BuildSpawn {
+                    path: todo!(),
+                    envs: todo!(),
+                }
+                .call();
 
                 todo!()
             })

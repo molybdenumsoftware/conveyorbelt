@@ -11,13 +11,16 @@ use tokio::{
 };
 use tokio_stream::wrappers::ReceiverStream;
 
-use crate::{common::ForStdoutputLine as _, effects::Effect};
+use crate::{
+    common::ForStdoutputLine as _,
+    effects::{Effect, server::ServeDir},
+};
 
 #[derive(Debug, derive_more::Display)]
-#[display("spawn {path:?} with environment {envs:?}")]
+#[display("spawn {path:?} with serve dir {serve_dir:?}")]
 pub(crate) struct BuildSpawn {
     pub path: PathBuf,
-    pub envs: Vec<(String, String)>,
+    pub serve_dir: ServeDir,
 }
 
 #[derive(Debug, derive_more::Display)]

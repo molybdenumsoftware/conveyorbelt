@@ -105,8 +105,9 @@ impl Effect<ServerSpawned, anyhow::Error> for ServerSpawn {
             });
 
         let join_handle = tokio::spawn(async move {
-            server_task.await;
+            let result = server_task.await;
             drop(self.serve_dir);
+            result
         });
 
         Ok(ServerSpawned {
