@@ -1,10 +1,12 @@
 use std::{convert::Infallible, path::PathBuf};
 
 use rxrust::prelude::*;
+use tokio::try_join;
 
 use crate::effects::{
     Effect as _,
     build::BuildSpawn,
+    fswatch::FsWatchInit,
     server::{ObtainServeDir, ServerSpawn},
     signal::{InstallSignalHandler, SignalInstalled},
 };
@@ -206,12 +208,24 @@ impl App {
                 let server_spawned = ServerSpawn {
                     serve_dir: serve_dir.clone(),
                 }
-                .call();
+                .effect();
+
                 let initial_build = BuildSpawn {
                     path: build_command_path.clone(),
                     serve_dir: serve_dir.clone(),
                 }
-                .call();
+                .effect();
+
+                let fswatched = FsWatchInit {
+                    path: project_root.clone(),
+                }
+                .effect();
+
+                let others = Shared::from_future(async move {
+                    // do some stuff
+                    try_join!(initial_build, fswatched)
+                });
+
 
                 todo!()
             })
