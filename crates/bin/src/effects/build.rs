@@ -42,7 +42,7 @@ pub(crate) struct BuildSpawned {
 impl Effect<BuildSpawned, anyhow::Error> for BuildSpawn {
     async fn effect(self) -> Result<BuildSpawned, anyhow::Error> {
         let mut child = Command::new(self.path)
-            .env(SERVE_PATH, self.serve_dir.as_ref().path())
+            .env(SERVE_PATH, self.serve_dir.path())
             .stdout(Stdio::piped())
             .stderr(Stdio::piped())
             .spawn()

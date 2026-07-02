@@ -58,13 +58,13 @@ pub(crate) struct ServerSpawn {
 impl Effect<ServerSpawned, anyhow::Error> for ServerSpawn {
     async fn effect(self) -> Result<ServerSpawned, anyhow::Error> {
         let handler_opts = RequestHandlerOpts {
-            root_dir: self.serve_dir.as_ref().path().to_path_buf(),
+            root_dir: self.serve_dir.path().to_path_buf(),
             compression: false,
             compression_static: false,
             cors: None,
             security_headers: false,
             cache_control_headers: false,
-            page404: self.serve_dir.as_ref().path().join("404.html"),
+            page404: self.serve_dir.path().join("404.html"),
             page50x: PathBuf::new(),
             index_files: ["index.html"].iter().map(|s| s.to_string()).collect(),
             log_remote_address: false,
@@ -127,9 +127,11 @@ pub(crate) struct ServerShutdown {
 }
 
 impl Effect<(), anyhow::Error> for ServerShutdown {
-    async fn effect(self) -> Result<(), anyhow::Error> {
+    async fn effect(self) -> anyhow::Result<()> {
         self.shutdown_sender.send(()).unwrap();
-        self.join_handle.await.context("server task join")?;
-        Ok(())
+        self.join_handle
+            .await
+            .context("server task join")?
+            .context("server shut down")
     }
 }

@@ -1,21 +1,12 @@
-use std::{any, convert::Infallible, path::PathBuf, rc::Rc, sync::Arc, vec::Vec};
+use std::{convert::Infallible, path::PathBuf};
 
-use futures::FutureExt as _;
-use nix::{sys::signal::Signal::SIGTERM, unistd::Pid};
-use notify::INotifyWatcher;
 use rxrust::prelude::*;
-use tracing::{info, warn};
 
-use crate::{
-    common::{SERVE_PATH, StateForTesting, TESTING_MODE},
-    effects::{
-        Effect as _,
-        browser::{Browser, BrowserCommand},
-        build::{BuildSpawn, BuildSpawned},
-        fswatch::{FsChange, FsWatchInit, FsWatching},
-        server::{ObtainServeDir, ServeDir, ServerSpawn, ServerSpawned},
-        signal::{InstallSignalHandler, SignalInstalled},
-    },
+use crate::effects::{
+    Effect as _,
+    build::BuildSpawn,
+    server::{ObtainServeDir, ServerSpawn},
+    signal::{InstallSignalHandler, SignalInstalled},
 };
 
 // #[derive(Default, Debug)]
@@ -212,9 +203,12 @@ impl App {
                     return Shared::of(Exit(1)).box_it();
                 };
 
-                let server_spawned = ServerSpawn { serve_dir }.call();
+                let server_spawned = ServerSpawn {
+                    serve_dir: serve_dir.clone(),
+                }
+                .call();
                 let initial_build = BuildSpawn {
-                    path: self.build_command_path.clone(),
+                    path: build_command_path.clone(),
                     serve_dir: serve_dir.clone(),
                 }
                 .call();
