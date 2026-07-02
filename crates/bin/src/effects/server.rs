@@ -1,6 +1,7 @@
 use std::{
     net::{IpAddr, Ipv4Addr, SocketAddr, TcpListener},
     path::PathBuf,
+    rc::Rc,
     sync::Arc,
 };
 
@@ -21,13 +22,15 @@ pub(crate) struct ObtainServeDir;
 
 impl Effect<ServeDir, anyhow::Error> for ObtainServeDir {
     async fn effect(self) -> Result<ServeDir, anyhow::Error> {
-        Ok(ServeDir(TempDir::new().context("create serve dir")?))
+        Ok(ServeDir(Arc::new(
+            TempDir::new().context("create serve dir")?,
+        )))
     }
 }
 
-#[derive(Debug, derive_more::Deref, derive_more::Display)]
+#[derive(Debug, derive_more::Deref, derive_more::Display, derive_more::AsRef)]
 #[display("serve dir: {_0:?}")]
-pub(crate) struct ServeDir(Rc<TempDir>);
+pub(crate) struct ServeDir(Arc<TempDir>);
 
 #[derive(Debug, derive_more::Display)]
 #[display("server spawned: {address}")]
@@ -49,13 +52,13 @@ pub(crate) enum ServerShutdownEvent {
 #[derive(Debug, derive_more::Display)]
 #[display("serve {serve_dir:?}")]
 pub(crate) struct ServerSpawn {
-    pub serve_dir: PathBuf,
+    pub serve_dir: ServeDir,
 }
 
 impl Effect<ServerSpawned, anyhow::Error> for ServerSpawn {
     async fn effect(self) -> Result<ServerSpawned, anyhow::Error> {
         let handler_opts = RequestHandlerOpts {
-            root_dir: self.serve_dir.clone(),
+            root_dir: self.serve_dir.as_ref().into_path(),
             compression: false,
             compression_static: false,
             cors: None,

@@ -33,6 +33,7 @@ in
       |> lib.mergeAttrs {
         clap.features = [ "derive" ];
         derive_more.features = [
+          "as_ref"
           "debug"
           "deref"
           "deref_mut"
