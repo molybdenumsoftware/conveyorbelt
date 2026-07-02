@@ -27,7 +27,7 @@ impl Effect<ServeDir, anyhow::Error> for ObtainServeDir {
 
 #[derive(Debug, derive_more::Deref, derive_more::Display)]
 #[display("serve dir: {_0:?}")]
-pub(crate) struct ServeDir(TempDir);
+pub(crate) struct ServeDir(Rc<TempDir>);
 
 #[derive(Debug, derive_more::Display)]
 #[display("server spawned: {address}")]

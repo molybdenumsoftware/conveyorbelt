@@ -1,4 +1,4 @@
-use std::{any, convert::Infallible, path::PathBuf, sync::Arc, vec::Vec};
+use std::{any, convert::Infallible, path::PathBuf, rc::Rc, sync::Arc, vec::Vec};
 
 use futures::FutureExt as _;
 use nix::{sys::signal::Signal::SIGTERM, unistd::Pid};
@@ -212,11 +212,9 @@ impl App {
                     return Shared::of(Exit(1)).box_it();
                 };
 
-                let box_it = Shared::from_future(async { "" })
-                    //TODO: this should be switch_map
-                    // .switch_map(|s| Shared::of(s))
-                    .flat_map(|s| Shared::of(s))
-                    .box_it();
+
+                ServerSpawn {serve_dir}.call().box_it()
+
 
                 todo!()
             })
