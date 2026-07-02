@@ -7,7 +7,7 @@ use crate::effects::{
     Effect as _,
     build::BuildSpawn,
     fswatch::FsWatchInit,
-    server::{ObtainServeDir, ServerSpawn},
+    server::{self, ObtainServeDir, ServerSpawn},
     signal::{InstallSignalHandler, SignalInstalled},
 };
 
@@ -208,7 +208,7 @@ impl App {
                 let server_spawned = ServerSpawn {
                     serve_dir: serve_dir.clone(),
                 }
-                .effect();
+                .call();
 
                 let initial_build = BuildSpawn {
                     path: build_command_path.clone(),
@@ -224,7 +224,19 @@ impl App {
                 let droppables =
                     Shared::from_future(async move { try_join!(initial_build, fswatched) });
 
-                todo!()
+                droppables
+                    .zip(server_spawned)
+                    .map(|(droppables_result, server_spawned_result)| {
+                        let Ok(server_spawned) = server_spawned_result else {
+                            return Exit(1);
+                        };
+                        let Ok((initial_build, fswatched)) = droppables_result else {
+                            // TODO: shut down the server
+                            todo!();
+                        };
+                        Happy((server_spawned, initial_build, fswatched))
+                    })
+                    .box_it()
             })
             .tap(|v| {
                 //
