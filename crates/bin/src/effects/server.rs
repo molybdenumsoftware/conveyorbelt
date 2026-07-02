@@ -1,7 +1,6 @@
 use std::{
     net::{IpAddr, Ipv4Addr, SocketAddr, TcpListener},
     path::PathBuf,
-    rc::Rc,
     sync::Arc,
 };
 
@@ -30,6 +29,7 @@ impl Effect<ServeDir, anyhow::Error> for ObtainServeDir {
 
 #[derive(Debug, derive_more::Deref, derive_more::Display, derive_more::AsRef)]
 #[display("serve dir: {_0:?}")]
+#[as_ref(forward)]
 pub(crate) struct ServeDir(Arc<TempDir>);
 
 #[derive(Debug, derive_more::Display)]
@@ -58,13 +58,13 @@ pub(crate) struct ServerSpawn {
 impl Effect<ServerSpawned, anyhow::Error> for ServerSpawn {
     async fn effect(self) -> Result<ServerSpawned, anyhow::Error> {
         let handler_opts = RequestHandlerOpts {
-            root_dir: self.serve_dir.as_ref().into_path(),
+            root_dir: self.serve_dir.as_ref().path().to_path_buf(),
             compression: false,
             compression_static: false,
             cors: None,
             security_headers: false,
             cache_control_headers: false,
-            page404: self.serve_dir.join("404.html"),
+            page404: self.serve_dir.as_ref().path().join("404.html"),
             page50x: PathBuf::new(),
             index_files: ["index.html"].iter().map(|s| s.to_string()).collect(),
             log_remote_address: false,
@@ -104,7 +104,10 @@ impl Effect<ServerSpawned, anyhow::Error> for ServerSpawn {
                 shutdown_signal.await.unwrap();
             });
 
-        let join_handle = tokio::spawn(server_task);
+        let join_handle = tokio::spawn(async move {
+            server_task.await;
+            drop(self.serve_dir);
+        });
 
         Ok(ServerSpawned {
             address,
