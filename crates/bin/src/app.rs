@@ -221,11 +221,8 @@ impl App {
                 }
                 .effect();
 
-                let others = Shared::from_future(async move {
-                    // do some stuff
-                    try_join!(initial_build, fswatched)
-                });
-
+                let droppables =
+                    Shared::from_future(async move { try_join!(initial_build, fswatched) });
 
                 todo!()
             })
