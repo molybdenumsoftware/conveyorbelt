@@ -209,8 +209,7 @@ impl App {
             })
             .switch_map(move |control| {
                 let Happy(serve_dir) = control else {
-                    let box_it = Shared::of(Exit(1)).box_it();
-                    return box_it;
+                    return Shared::of(Exit(1)).box_it();
                 };
 
                 let box_it = Shared::from_future(async { "" })
@@ -218,7 +217,8 @@ impl App {
                     // .switch_map(|s| Shared::of(s))
                     .flat_map(|s| Shared::of(s))
                     .box_it();
-                box_it
+
+                todo!()
             })
             .tap(|v| {
                 //
