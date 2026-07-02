@@ -199,11 +199,11 @@ impl App {
         InstallSignalHandler
             .call()
             .switch_map(|result| {
-                let Ok(SignalInstalled(signal)) = result else {
+                let Ok(SignalInstalled(signal_observable)) = result else {
                     return Shared::of(Exit(1)).box_it();
                 };
                 let serve_dir = ObtainServeDir.call().map(Control::from);
-                let signal = signal.map(|_| Exit(1));
+                let signal = signal_observable.map(|_| Exit(1)).box_it();
 
                 serve_dir.merge(signal).box_it()
             })
