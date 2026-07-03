@@ -224,7 +224,13 @@ impl App {
                 let droppables =
                     Shared::from_future(
                         async move { try_join!(initial_build_spawn, fswatch_init) },
-                    );
+                    )
+                    .switch_map(|droppables| {
+                        let Ok((build_spawned, fs_watching)) = droppables else {
+                            return Shared::of(Exit(1)).box_it();
+                        };
+                        build_spawned.wait.call()
+                    });
 
                 droppables
                     .zip(server_spawn)

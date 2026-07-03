@@ -36,7 +36,7 @@ pub(crate) struct BuildSpawned {
     pub pid: Pid,
     #[debug(skip)]
     pub output_lines: SharedBoxedObservable<'static, OutputLine, Infallible>,
-    pub wait: Wait,
+    pub wait: BuildWait,
 }
 
 impl Effect<BuildSpawned, anyhow::Error> for BuildSpawn {
@@ -83,7 +83,7 @@ impl Effect<BuildSpawned, anyhow::Error> for BuildSpawn {
             .boxed()
         });
 
-        let wait = Wait {
+        let wait = BuildWait {
             child,
             stdout_join_handle,
             stderr_join_handle,
@@ -101,13 +101,13 @@ impl Effect<BuildSpawned, anyhow::Error> for BuildSpawn {
 
 #[derive(Debug, derive_more::Display)]
 #[display("wait for {child:?}")]
-pub(crate) struct Wait {
+pub(crate) struct BuildWait {
     child: Child,
     stdout_join_handle: task::JoinHandle<()>,
     stderr_join_handle: task::JoinHandle<()>,
 }
 
-impl Effect<Option<i32>, anyhow::Error> for Wait {
+impl Effect<Option<i32>, anyhow::Error> for BuildWait {
     async fn effect(self) -> Result<Option<i32>, anyhow::Error> {
         let Self {
             mut child,
