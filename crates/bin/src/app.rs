@@ -229,7 +229,14 @@ impl App {
                         let Ok((build_spawned, fs_watching)) = droppables else {
                             return Shared::of(Exit(1)).box_it();
                         };
-                        build_spawned.wait.call()
+                        build_spawned
+                            .wait
+                            .call()
+                            .map(|result| match result {
+                                Ok(Some(0)) => Happy(fs_watching),
+                                _ => Exit(1),
+                            })
+                            .box_it()
                     });
 
                 droppables
