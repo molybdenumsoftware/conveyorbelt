@@ -34,7 +34,7 @@ pub(crate) struct ServeDir(Arc<TempDir>);
 
 #[derive(Debug, derive_more::Display)]
 #[display("server spawned: {address}")]
-pub(crate) struct ServerSpawned {
+pub(crate) struct ServerRunning {
     pub address: SocketAddr,
     pub shutdown_effect: ServerShutdown,
 }
@@ -55,8 +55,8 @@ pub(crate) struct ServerSpawn {
     pub serve_dir: ServeDir,
 }
 
-impl Effect<ServerSpawned, anyhow::Error> for ServerSpawn {
-    async fn effect(self) -> Result<ServerSpawned, anyhow::Error> {
+impl Effect<ServerRunning, anyhow::Error> for ServerSpawn {
+    async fn effect(self) -> Result<ServerRunning, anyhow::Error> {
         let handler_opts = RequestHandlerOpts {
             root_dir: self.serve_dir.path().to_path_buf(),
             compression: false,
@@ -110,7 +110,7 @@ impl Effect<ServerSpawned, anyhow::Error> for ServerSpawn {
             result
         });
 
-        Ok(ServerSpawned {
+        Ok(ServerRunning {
             address,
             shutdown_effect: ServerShutdown {
                 shutdown_sender,

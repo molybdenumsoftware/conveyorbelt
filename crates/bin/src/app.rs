@@ -226,15 +226,20 @@ impl App {
 
                 droppables
                     .zip(server_spawned)
-                    .map(|(droppables_result, server_spawned_result)| {
-                        let Ok(server_spawned) = server_spawned_result else {
-                            return Exit(1);
+                    // TODO should be switch_map?
+                    .flat_map(|(droppables, server_running)| {
+                        let Ok(server_running) = server_running else {
+                            return Shared::of(Exit(1)).box_it();
                         };
-                        let Ok((initial_build, fswatched)) = droppables_result else {
+                        let Ok((initial_build, fswatched)) = droppables else {
                             // TODO: shut down the server
-                            todo!();
+                            return server_running
+                                .shutdown_effect
+                                .call()
+                                .map(|_| Exit(1))
+                                .box_it();
                         };
-                        Happy((server_spawned, initial_build, fswatched))
+                        Shared::of(Happy((server_running, initial_build, fswatched))).box_it()
                     })
                     .box_it()
             })
