@@ -241,6 +241,9 @@ impl App {
                         let Ok(server_running) = server_running else {
                             return Shared::of(Exit(1)).box_it();
                         };
+                        let Happy(fs_watching) = fs_watching else {
+                            return Shared::of(Exit(1)).box_it();
+                        };
                         let Ok(fs_watching) = fs_watching else {
                             return server_running
                                 .shutdown_effect
