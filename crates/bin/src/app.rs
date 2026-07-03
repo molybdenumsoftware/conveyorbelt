@@ -242,18 +242,18 @@ impl App {
                             return Shared::of(Exit(1)).box_it();
                         };
                         let Happy(fs_watching) = fs_watching else {
-                            return Shared::of(Exit(1)).box_it();
-                        };
-                        let Ok(fs_watching) = fs_watching else {
                             return server_running
                                 .shutdown_effect
                                 .call()
                                 .map(|_| Exit(1))
                                 .box_it();
                         };
-                        Shared::of(Happy((server_running, initial_build, fs_watching))).box_it()
+                        Shared::of(Happy((server_running, fs_watching))).box_it()
                     })
                     .box_it()
+            })
+            .switch_map(|control| {
+                todo!();
             })
             .tap(|v| {
                 //
