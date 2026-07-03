@@ -5,7 +5,7 @@ use tokio::try_join;
 
 use crate::effects::{
     Effect as _,
-    build::BuildSpawn,
+    build::{BuildSpawn, BuildTerminated},
     fswatch::FsWatchInit,
     server::{self, ObtainServeDir, ServerSpawn},
     signal::{InstallSignalHandler, SignalInstalled},
@@ -221,10 +221,7 @@ impl App {
                 }
                 .effect();
 
-                let droppables =
-                    Shared::from_future(
-                        async move { try_join!(initial_build_spawn, fswatch_init) },
-                    )
+                Shared::from_future(async move { try_join!(initial_build_spawn, fswatch_init) })
                     .switch_map(|droppables| {
                         let Ok((build_spawned, fs_watching)) = droppables else {
                             return Shared::of(Exit(1)).box_it();
@@ -233,27 +230,25 @@ impl App {
                             .wait
                             .call()
                             .map(|result| match result {
-                                Ok(Some(0)) => Happy(fs_watching),
+                                Ok(BuildTerminated::Code(0)) => Happy(fs_watching),
                                 _ => Exit(1),
                             })
                             .box_it()
-                    });
-
-                droppables
+                    })
                     .zip(server_spawn)
                     // TODO should be switch_map?
-                    .flat_map(|(droppables, server_running)| {
+                    .flat_map(|(fs_watching, server_running)| {
                         let Ok(server_running) = server_running else {
                             return Shared::of(Exit(1)).box_it();
                         };
-                        let Ok((initial_build, fswatched)) = droppables else {
+                        let Ok(fs_watching) = fs_watching else {
                             return server_running
                                 .shutdown_effect
                                 .call()
                                 .map(|_| Exit(1))
                                 .box_it();
                         };
-                        Shared::of(Happy((server_running, initial_build, fswatched))).box_it()
+                        Shared::of(Happy((server_running, initial_build, fs_watching))).box_it()
                     })
                     .box_it()
             })

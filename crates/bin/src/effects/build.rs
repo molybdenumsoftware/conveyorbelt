@@ -107,8 +107,16 @@ pub(crate) struct BuildWait {
     stderr_join_handle: task::JoinHandle<()>,
 }
 
-impl Effect<Option<i32>, anyhow::Error> for BuildWait {
-    async fn effect(self) -> Result<Option<i32>, anyhow::Error> {
+#[derive(Debug, derive_more::Display)]
+pub(crate) enum BuildTerminated {
+    #[display("build terminated: {_0}")]
+    Code(i32),
+    #[display("build terminated without code")]
+    NoCode,
+}
+
+impl Effect<BuildTerminated, anyhow::Error> for BuildWait {
+    async fn effect(self) -> Result<BuildTerminated, anyhow::Error> {
         let Self {
             mut child,
             stdout_join_handle,
@@ -122,7 +130,10 @@ impl Effect<Option<i32>, anyhow::Error> for BuildWait {
             .code();
         tokio::join!(stdout_join_handle, stderr_join_handle);
 
-        Ok(code)
+        Ok(match code {
+            Some(code) => BuildTerminated::Code(code),
+            None => BuildTerminated::NoCode,
+        })
     }
 }
 
