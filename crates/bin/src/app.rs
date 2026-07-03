@@ -205,27 +205,29 @@ impl App {
                     return Shared::of(Exit(1)).box_it();
                 };
 
-                let server_spawned = ServerSpawn {
+                let server_spawn = ServerSpawn {
                     serve_dir: serve_dir.clone(),
                 }
                 .call();
 
-                let initial_build = BuildSpawn {
+                let initial_build_spawn = BuildSpawn {
                     path: build_command_path.clone(),
                     serve_dir: serve_dir.clone(),
                 }
                 .effect();
 
-                let fswatched = FsWatchInit {
+                let fswatch_init = FsWatchInit {
                     path: project_root.clone(),
                 }
                 .effect();
 
                 let droppables =
-                    Shared::from_future(async move { try_join!(initial_build, fswatched) });
+                    Shared::from_future(
+                        async move { try_join!(initial_build_spawn, fswatch_init) },
+                    );
 
                 droppables
-                    .zip(server_spawned)
+                    .zip(server_spawn)
                     // TODO should be switch_map?
                     .flat_map(|(droppables, server_running)| {
                         let Ok(server_running) = server_running else {
