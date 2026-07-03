@@ -232,7 +232,6 @@ impl App {
                             return Shared::of(Exit(1)).box_it();
                         };
                         let Ok((initial_build, fswatched)) = droppables else {
-                            // TODO: shut down the server
                             return server_running
                                 .shutdown_effect
                                 .call()
@@ -248,7 +247,7 @@ impl App {
             })
             .filter_map(|control| match control {
                 Exit(code) => Some(code),
-                Happy(()) => None,
+                Happy(_) => None,
             })
             .box_it()
     }

@@ -105,7 +105,7 @@ impl Effect<ServerRunning, anyhow::Error> for ServerSpawn {
             });
 
         let join_handle = tokio::spawn(async move {
-            let result = server_task.await;
+            let result = server_task.await.map(|()| ServerShutdownSuccess);
             drop(self.serve_dir);
             result
         });
@@ -120,14 +120,19 @@ impl Effect<ServerRunning, anyhow::Error> for ServerSpawn {
     }
 }
 
-#[derive(Debug)]
+#[derive(Debug, derive_more::Display)]
+#[display("shut down server")]
 pub(crate) struct ServerShutdown {
     shutdown_sender: oneshot::Sender<()>,
-    join_handle: JoinHandle<hyper::Result<()>>,
+    join_handle: JoinHandle<hyper::Result<ServerShutdownSuccess>>,
 }
 
-impl Effect<(), anyhow::Error> for ServerShutdown {
-    async fn effect(self) -> anyhow::Result<()> {
+#[derive(Debug, derive_more::Display)]
+#[display("server shutdown successfully")]
+pub(crate) struct ServerShutdownSuccess;
+
+impl Effect<ServerShutdownSuccess, anyhow::Error> for ServerShutdown {
+    async fn effect(self) -> anyhow::Result<ServerShutdownSuccess> {
         self.shutdown_sender.send(()).unwrap();
         self.join_handle
             .await
