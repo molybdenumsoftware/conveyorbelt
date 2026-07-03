@@ -229,7 +229,7 @@ impl App {
                         build_spawned
                             .wait
                             .call()
-                            .map(|result| match result {
+                            .map(move |result| match result {
                                 Ok(BuildTerminated::Code(0)) => Happy(fs_watching),
                                 _ => Exit(1),
                             })
@@ -252,8 +252,9 @@ impl App {
                     })
                     .box_it()
             })
-            .switch_map(|control| {
-                todo!();
+            .flat_map(|control| {
+                // Should start browser here?
+                Shared::of(Happy(()))
             })
             .tap(|v| {
                 //
