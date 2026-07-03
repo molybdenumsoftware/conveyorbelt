@@ -226,14 +226,13 @@ impl App {
                         let Ok((build_spawned, fs_watching)) = droppables else {
                             return Shared::of(Exit(1)).box_it();
                         };
-                        build_spawned
-                            .wait
-                            .call()
-                            .map(move |result| match result {
+                        Shared::from_future(async move {
+                            match build_spawned.wait.effect().await {
                                 Ok(BuildTerminated::Code(0)) => Happy(fs_watching),
                                 _ => Exit(1),
-                            })
-                            .box_it()
+                            }
+                        })
+                        .box_it()
                     })
                     .zip(server_spawn)
                     // TODO should be switch_map?
