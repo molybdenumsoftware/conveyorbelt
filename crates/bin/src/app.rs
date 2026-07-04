@@ -7,7 +7,7 @@ use crate::effects::{
     Effect as _,
     browser::{BrowserSpawn, BrowserSpawnSuccess},
     build::{BuildSpawn, BuildTerminated},
-    fswatch::FsWatchInit,
+    fswatch::{FsWatchInit, FsWatchWatchingEvent},
     server::{self, ObtainServeDir, ServerSpawn},
     signal::{InstallSignalHandler, SignalInstalled},
 };
@@ -265,12 +265,23 @@ impl App {
                 .map(Control::from)
                 // TODO switch_map
                 .flat_map(|control| {
-                    let BrowserSpawnSuccess { browser, page_reload }= match control {
+                    let BrowserSpawnSuccess {
+                        browser,
+                        page_reload,
+                    } = match control {
                         Exit(code) => return Shared::of(Exit(code)).box_it(),
                         Happy(browser) => browser,
                     };
-                    fs_watching.0.scan()
-                    
+                    fs_watching.0.map(|watching_event| {
+                        let FsWatchWatchingEvent::Change(fs_change) = watching_event else {
+                            todo!()
+                        };
+                        let build_spawn = BuildSpawn {
+                            path: build_command_path.clone(),
+                            serve_dir: serve_dir.clone(),
+                        }
+                        .effect();
+                    });
 
                     todo!();
                 })
