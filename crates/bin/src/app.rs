@@ -262,7 +262,12 @@ impl App {
                     url: format!("http://{}/", server_running.address),
                 }
                 .call()
-                .map(Control::into)
+                .map(Control::from)
+                // TODO switch_map
+                .flat_map(|control| {
+                    let browser = match
+                    todo!();
+                })
                 .box_it()
             })
             .tap(|v| {

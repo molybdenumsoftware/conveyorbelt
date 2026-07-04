@@ -39,7 +39,8 @@ impl Browser {
 
 // TODO should we be using the Observable types' error type argument?
 
-#[derive(Debug)]
+#[derive(Debug, derive_more::Display)]
+#[display("spawn browser and go to: {url}")]
 pub(crate) struct BrowserSpawn {
     pub(crate) url: String,
 }
@@ -113,16 +114,16 @@ impl Effect<BrowserSpawnSuccess, BrowserSpawnError> for BrowserSpawn {
 
         let websocket_address = browser.websocket_address().clone();
         let page = browser.new_page(self.url).await.context("create page")?;
-        let browser_reload = PageReload { page };
+        let page_reload = PageReload { page };
 
         Box::leak(Box::new(browser));
-            Browser {
+        Ok(BrowserSpawnSuccess {
+            browser: Browser {
                 pid,
                 websocket_address,
             },
-        Ok(BrowserSpawnSuccess { browser: , page_reload: () }
-            browser_reload,
-        ))
+            page_reload,
+        })
     }
 }
 
