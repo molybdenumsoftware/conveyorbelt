@@ -254,14 +254,16 @@ impl App {
             })
             .flat_map(|control| {
                 let (server_running, fs_watching) = match control {
-                    Exit(code) => return Shared::of(Exit(code)),
+                    Exit(code) => return Shared::of(Exit(code)).box_it(),
                     Happy(happy) => happy,
                 };
 
-                let browser = BrowserSpawn { url: todo!() }.effect();
-
-                // Should start browser here?
-                Shared::of(Happy(()))
+                BrowserSpawn {
+                    url: format!("http://{}/", server_running.address),
+                }
+                .call()
+                .map(Control::into)
+                .box_it()
             })
             .tap(|v| {
                 //
