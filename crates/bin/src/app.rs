@@ -254,13 +254,12 @@ impl App {
                         url: format!("http://{}/", server_running.address),
                     }
                     .call()
-                    .map(Control::from)
                     // TODO switch_map
                     .flat_map(|control| {
                         let BrowserSpawnSuccess {
                             browser,
                             page_reload,
-                        } = match control {
+                        } = match result {
                             Exit(code) => return Shared::of(Exit(code)).box_it(),
                             Happy(browser) => browser,
                         };
