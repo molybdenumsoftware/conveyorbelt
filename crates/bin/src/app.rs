@@ -250,47 +250,49 @@ impl App {
                         };
                         Shared::of(Happy((server_running, fs_watching))).box_it()
                     })
-                    .box_it()
-            })
-            .flat_map(|control| {
-                let (server_running, fs_watching) = match control {
-                    Exit(code) => return Shared::of(Exit(code)).box_it(),
-                    Happy(happy) => happy,
-                };
-
-                BrowserSpawn {
-                    url: format!("http://{}/", server_running.address),
-                }
-                .call()
-                .map(Control::from)
-                // TODO switch_map
-                .flat_map(|control| {
-                    let BrowserSpawnSuccess {
-                        browser,
-                        page_reload,
-                    } = match control {
-                        Exit(code) => return Shared::of(Exit(code)).box_it(),
-                        Happy(browser) => browser,
-                    };
-                    // TODO some circular composition
-                    fs_watching.0.flat_map(|watching_event| {
-                        let FsWatchWatchingEvent::Change(fs_change) = watching_event else {
-                            todo!()
+                    .flat_map(|control| {
+                        let (server_running, fs_watching) = match control {
+                            Exit(code) => return Shared::of(Exit(code)).box_it(),
+                            Happy(happy) => happy,
                         };
-                        BuildSpawn {
-                            path: build_command_path.clone(),
-                            serve_dir: serve_dir.clone(),
+
+                        BrowserSpawn {
+                            url: format!("http://{}/", server_running.address),
                         }
                         .call()
-                        .filter_map(|result| match result {
-                            Ok(_) => Some(()),
-                            Err(_) => None,
-                        });
-                    });
+                        .map(Control::from)
+                        // TODO switch_map
+                        .flat_map(|control| {
+                            let BrowserSpawnSuccess {
+                                browser,
+                                page_reload,
+                            } = match control {
+                                Exit(code) => return Shared::of(Exit(code)).box_it(),
+                                Happy(browser) => browser,
+                            };
+                            // TODO some circular composition
+                            fs_watching.0.flat_map(|watching_event| {
+                                let FsWatchWatchingEvent::Change(fs_change) = watching_event else {
+                                    todo!()
+                                };
+                                BuildSpawn {
+                                    path: build_command_path.clone(),
+                                    serve_dir: serve_dir.clone(),
+                                }
+                                .call()
+                                .filter_map(
+                                    |result| match result {
+                                        Ok(_) => Some(()),
+                                        Err(_) => None,
+                                    },
+                                );
+                            });
 
-                    todo!();
-                })
-                .box_it()
+                            todo!();
+                        })
+                        .box_it()
+                    })
+                    .box_it()
             })
             .tap(|v| {
                 //
