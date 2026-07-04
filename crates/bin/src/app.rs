@@ -5,6 +5,7 @@ use tokio::try_join;
 
 use crate::effects::{
     Effect as _,
+    browser::BrowserSpawn,
     build::{BuildSpawn, BuildTerminated},
     fswatch::FsWatchInit,
     server::{self, ObtainServeDir, ServerSpawn},
@@ -252,6 +253,13 @@ impl App {
                     .box_it()
             })
             .flat_map(|control| {
+                let (server_running, fs_watching) = match control {
+                    Exit(code) => return Shared::of(Exit(code)),
+                    Happy(happy) => happy,
+                };
+
+                let browser = BrowserSpawn { url: todo!() }.effect();
+
                 // Should start browser here?
                 Shared::of(Happy(()))
             })
