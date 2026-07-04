@@ -127,7 +127,8 @@ impl Effect<BrowserSpawnSuccess, BrowserSpawnError> for BrowserSpawn {
     }
 }
 
-#[derive(Debug)]
+#[derive(Debug, derive_more::Display)]
+#[display("reload page")]
 pub(crate) struct PageReload {
     page: chromiumoxide::Page,
 }
@@ -140,10 +141,16 @@ pub(crate) struct BrowserReloaded(PageReload);
 #[error("page reload error: {0}")]
 pub(crate) struct PageReloadError(#[from] anyhow::Error);
 
-impl Effect<Self, (PageReloadError, Self)> for PageReload {
-    async fn effect(self) -> Result<Self, (PageReloadError, Self)> {
+#[derive(Debug, derive_more::Display)]
+#[display("page reloaded")]
+pub(crate) struct PageReloadSuccess {
+    pub page_reload: PageReload,
+}
+
+impl Effect<PageReloadSuccess, (PageReloadError, Self)> for PageReload {
+    async fn effect(self) -> Result<PageReloadSuccess, (PageReloadError, Self)> {
         match self.page.reload().await.context("reloading") {
-            Ok(_) => Ok(self),
+            Ok(_) => Ok(PageReloadSuccess { page_reload: self }),
             Err(error) => Err((error.into(), self)),
         }
     }
