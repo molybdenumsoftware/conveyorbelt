@@ -21,7 +21,9 @@ pub(crate) struct InstallSignalHandler;
 
 #[derive(derive_more::Display)]
 #[display("signal installed")]
-pub(crate) struct SignalInstalled(pub SharedBoxedObservable<'static, SignalKind, Infallible>);
+pub(crate) struct SignalInstalled {
+    pub signal_o: SharedBoxedObservable<'static, SignalKind, Infallible>,
+}
 
 impl Effect<SignalInstalled, anyhow::Error> for InstallSignalHandler {
     async fn effect(self) -> Result<SignalInstalled, anyhow::Error> {
@@ -49,6 +51,8 @@ impl Effect<SignalInstalled, anyhow::Error> for InstallSignalHandler {
         let signal_events =
             Shared::from_stream(ReceiverStream::new(signal_event_receiver)).box_it();
 
-        Ok(SignalInstalled(signal_events))
+        Ok(SignalInstalled {
+            signal_o: signal_events,
+        })
     }
 }

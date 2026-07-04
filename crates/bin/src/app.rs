@@ -191,10 +191,18 @@ impl App {
         let build_command_path = self.build_command_path.clone();
         let project_root = self.project_root.clone();
 
+        Shared::from_future(async {
+            let SignalInstalled { signal_o } = InstallSignalHandler.effect().await?;
+            Ok(signal_o)
+        }).switch_map(|result| {
+                let signal_o = result?;
+                Ok()
+            })
+
         InstallSignalHandler
             .call()
             .switch_map(|result| {
-                let Ok(SignalInstalled(signal_observable)) = result else {
+                let Ok(SignalInstalled { signal_o: signal_observable }) = result else {
                     return Shared::of(Exit(1)).box_it();
                 };
                 let serve_dir = ObtainServeDir.call().map(Control::from);
