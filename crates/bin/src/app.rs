@@ -222,77 +222,68 @@ impl App {
                 }
                 .effect();
 
-                Shared::from_future(async move { try_join!(initial_build_spawn, fswatch_init) })
-                    .switch_map(|droppables| {
-                        let Ok((build_spawned, fs_watching)) = droppables else {
-                            return Shared::of(Exit(1)).box_it();
-                        };
-                        Shared::from_future(async move {
-                            match build_spawned.wait.effect().await {
-                                Ok(BuildTerminated::Code(0)) => Happy(fs_watching),
-                                _ => Exit(1),
-                            }
-                        })
-                        .box_it()
-                    })
-                    .zip(server_spawn)
-                    // TODO should be switch_map?
-                    .flat_map(|(fs_watching, server_running)| {
-                        let Ok(server_running) = server_running else {
-                            return Shared::of(Exit(1)).box_it();
-                        };
-                        let Happy(fs_watching) = fs_watching else {
-                            return server_running
-                                .shutdown_effect
-                                .call()
-                                .map(|_| Exit(1))
-                                .box_it();
-                        };
-                        Shared::of(Happy((server_running, fs_watching))).box_it()
-                    })
+                Shared::from_future(async move {
+                    let (build_spawned, fs_watching) =
+                        try_join!(initial_build_spawn, fswatch_init)?;
+                    let build_terminated = build_spawned.wait.effect().await?;
+                    Ok(build_terminated)
+                })
+                .zip(server_spawn)
+                // TODO should be switch_map?
+                .flat_map(|(fs_watching, server_running)| {
+                    let Ok(server_running) = server_running else {
+                        return Shared::of(Exit(1)).box_it();
+                    };
+                    let Ok(fs_watching) = fs_watching else {
+                        return server_running
+                            .shutdown_effect
+                            .call()
+                            .map(|_| Exit(1))
+                            .box_it();
+                    };
+                    Shared::of(Happy((server_running, fs_watching))).box_it()
+                })
+                .flat_map(|control| {
+                    let (server_running, fs_watching) = match control {
+                        Exit(code) => return Shared::of(Exit(code)).box_it(),
+                        Happy(happy) => happy,
+                    };
+
+                    BrowserSpawn {
+                        url: format!("http://{}/", server_running.address),
+                    }
+                    .call()
+                    .map(Control::from)
+                    // TODO switch_map
                     .flat_map(|control| {
-                        let (server_running, fs_watching) = match control {
+                        let BrowserSpawnSuccess {
+                            browser,
+                            page_reload,
+                        } = match control {
                             Exit(code) => return Shared::of(Exit(code)).box_it(),
-                            Happy(happy) => happy,
+                            Happy(browser) => browser,
                         };
-
-                        BrowserSpawn {
-                            url: format!("http://{}/", server_running.address),
-                        }
-                        .call()
-                        .map(Control::from)
-                        // TODO switch_map
-                        .flat_map(|control| {
-                            let BrowserSpawnSuccess {
-                                browser,
-                                page_reload,
-                            } = match control {
-                                Exit(code) => return Shared::of(Exit(code)).box_it(),
-                                Happy(browser) => browser,
+                        // TODO some circular composition
+                        fs_watching.0.flat_map(|watching_event| {
+                            let FsWatchWatchingEvent::Change(fs_change) = watching_event else {
+                                todo!()
                             };
-                            // TODO some circular composition
-                            fs_watching.0.flat_map(|watching_event| {
-                                let FsWatchWatchingEvent::Change(fs_change) = watching_event else {
-                                    todo!()
-                                };
-                                BuildSpawn {
-                                    path: build_command_path.clone(),
-                                    serve_dir: serve_dir.clone(),
-                                }
-                                .call()
-                                .filter_map(
-                                    |result| match result {
-                                        Ok(_) => Some(()),
-                                        Err(_) => None,
-                                    },
-                                );
+                            BuildSpawn {
+                                path: build_command_path.clone(),
+                                serve_dir: serve_dir.clone(),
+                            }
+                            .call()
+                            .filter_map(|result| match result {
+                                Ok(_) => Some(()),
+                                Err(_) => None,
                             });
+                        });
 
-                            todo!();
-                        })
-                        .box_it()
+                        todo!();
                     })
                     .box_it()
+                })
+                .box_it()
             })
             .tap(|v| {
                 //
