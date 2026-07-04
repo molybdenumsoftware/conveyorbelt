@@ -20,7 +20,8 @@ pub(crate) enum BrowserCommand {
     Reload(PageReload),
 }
 
-#[derive(Debug)]
+#[derive(Debug, derive_more::Display)]
+#[display("browser; pid: {pid}, websocket address: {websocket_address}")]
 pub(crate) struct Browser {
     pid: u32,
     websocket_address: String,
@@ -47,8 +48,15 @@ pub(crate) struct BrowserSpawn {
 #[error("browser spawn: {_0}")]
 pub(crate) struct BrowserSpawnError(#[from] anyhow::Error);
 
-impl Effect<(Browser, PageReload), BrowserSpawnError> for BrowserSpawn {
-    async fn effect(self) -> Result<(Browser, PageReload), BrowserSpawnError> {
+#[derive(Debug, derive_more::Display)]
+#[display("spawned: {browser}")]
+pub(crate) struct BrowserSpawnSuccess {
+    pub(crate) browser: Browser,
+    pub(crate) page_reload: PageReload,
+}
+
+impl Effect<BrowserSpawnSuccess, BrowserSpawnError> for BrowserSpawn {
+    async fn effect(self) -> Result<BrowserSpawnSuccess, BrowserSpawnError> {
         let browser_data_dir = tempdir().context("create data dir")?;
         debug!("browser data dir: {browser_data_dir:?}");
 
@@ -108,11 +116,11 @@ impl Effect<(Browser, PageReload), BrowserSpawnError> for BrowserSpawn {
         let browser_reload = PageReload { page };
 
         Box::leak(Box::new(browser));
-        Ok((
             Browser {
                 pid,
                 websocket_address,
             },
+        Ok(BrowserSpawnSuccess { browser: , page_reload: () }
             browser_reload,
         ))
     }
