@@ -226,7 +226,10 @@ impl App {
                     let (build_spawned, fs_watching) =
                         try_join!(initial_build_spawn, fswatch_init)?;
                     let build_terminated = build_spawned.wait.effect().await?;
-                    Ok(build_terminated)
+                    match build_terminated {
+                        BuildTerminated::Code(0) => Ok(fs_watching),
+                        _ => anyhow!(1),
+                    }
                 })
                 .zip(server_spawn)
                 // TODO should be switch_map?
