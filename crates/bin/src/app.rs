@@ -272,15 +272,20 @@ impl App {
                         Exit(code) => return Shared::of(Exit(code)).box_it(),
                         Happy(browser) => browser,
                     };
-                    fs_watching.0.map(|watching_event| {
+                    // TODO some circular composition
+                    fs_watching.0.flat_map(|watching_event| {
                         let FsWatchWatchingEvent::Change(fs_change) = watching_event else {
                             todo!()
                         };
-                        let build_spawn = BuildSpawn {
+                        BuildSpawn {
                             path: build_command_path.clone(),
                             serve_dir: serve_dir.clone(),
                         }
-                        .effect();
+                        .call()
+                        .filter_map(|result| match result {
+                            Ok(_) => Some(()),
+                            Err(_) => None,
+                        });
                     });
 
                     todo!();
