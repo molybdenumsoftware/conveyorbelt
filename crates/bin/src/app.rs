@@ -1,5 +1,6 @@
 use std::{convert::Infallible, path::PathBuf};
 
+use anyhow::anyhow;
 use rxrust::prelude::*;
 use tokio::try_join;
 
@@ -225,11 +226,8 @@ impl App {
                 Shared::from_future(async move {
                     let (build_spawned, fs_watching) =
                         try_join!(initial_build_spawn, fswatch_init)?;
-                    let build_terminated = build_spawned.wait.effect().await?;
-                    match build_terminated {
-                        BuildTerminated::Code(0) => Ok(fs_watching),
-                        _ => anyhow!(1),
-                    }
+                    build_spawned.wait.effect().await?;
+                    Ok(fs_watching)
                 })
                 .zip(server_spawn)
                 // TODO should be switch_map?

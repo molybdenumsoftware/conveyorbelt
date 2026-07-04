@@ -1,6 +1,6 @@
 use std::{convert::Infallible, path::PathBuf, process::Stdio};
 
-use anyhow::Context;
+use anyhow::{Context, bail};
 use futures::FutureExt;
 use nix::{sys::signal::Signal, unistd::Pid};
 use rxrust::prelude::*;
@@ -108,15 +108,11 @@ pub(crate) struct BuildWait {
 }
 
 #[derive(Debug, derive_more::Display)]
-pub(crate) enum BuildTerminated {
-    #[display("build terminated: {_0}")]
-    Code(i32),
-    #[display("build terminated without code")]
-    NoCode,
-}
+#[display("build succeeded")]
+pub(crate) struct BuildSucceeded;
 
-impl Effect<BuildTerminated, anyhow::Error> for BuildWait {
-    async fn effect(self) -> Result<BuildTerminated, anyhow::Error> {
+impl Effect<BuildSucceeded, anyhow::Error> for BuildWait {
+    async fn effect(self) -> Result<BuildSucceeded, anyhow::Error> {
         let Self {
             mut child,
             stdout_join_handle,
@@ -131,8 +127,9 @@ impl Effect<BuildTerminated, anyhow::Error> for BuildWait {
         tokio::join!(stdout_join_handle, stderr_join_handle);
 
         Ok(match code {
-            Some(code) => BuildTerminated::Code(code),
-            None => BuildTerminated::NoCode,
+            Some(0) => BuildSucceeded,
+            Some(non_zero) => bail!("build exited with: {non_zero}"),
+            None => bail!("build exited with no code"),
         })
     }
 }
