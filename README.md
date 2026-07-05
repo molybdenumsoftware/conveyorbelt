@@ -7,7 +7,7 @@ A CLI daemon that can:
 - watch source
 - invoke arbitrary build command
 - statically serve
-- laungh browser
+- launch browser
 - trigger page reload
 - politely report what it's doing
 
