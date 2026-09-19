@@ -8,9 +8,10 @@
         default = [ ];
         apply = lib.concat [ "result" ];
       };
-      config.files.files = lib.singleton {
-        path_ = ".gitignore";
-        drv = psArgs.config.gitignore |> lib.naturalSort |> lib.concatLines |> pkgs.writeText ".gitignore";
-      };
+      config.files.file.".gitignore" =
+        psArgs.config.gitignore
+        |> lib.naturalSort
+        |> lib.concatLines
+        |> pkgs.writeText ".gitignore";
     };
 }

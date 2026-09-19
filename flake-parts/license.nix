@@ -16,12 +16,7 @@ in
     in
     {
       treefmt.projectRootFile = path_;
-      files.files = [
-        {
-          inherit path_;
-          drv = inputs.license;
-        }
-      ];
+      files.file.${path_}.source = inputs.license;
 
       treefmt.settings.global.excludes = [ path_ ];
     };

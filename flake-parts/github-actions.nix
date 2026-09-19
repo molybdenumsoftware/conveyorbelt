@@ -25,31 +25,26 @@
       path_ = ".github/workflows/check.yaml";
     in
     {
-      files.files = [
-        {
-          inherit path_;
-          drv = pkgs.writers.writeJSON "gh-actions-workflow-check.yaml" {
-            name = "nix flake check";
-            on = {
-              push = { };
-              workflow_call = { };
-            };
-            jobs.default = {
-              runs-on = "ubuntu-latest";
-              steps =
-                [
-                  { uses = "actions/checkout@main"; }
-                  config.githubActions.setUpNix
-                  {
-                    name = "nix flake check";
-                    run = "nix flake -vv --print-build-logs --accept-flake-config check";
-                  }
-                ]
-                |> lib.flatten;
-            };
-          };
-        }
-      ];
+      files.file.${path_}.source = pkgs.writers.writeJSON "gh-actions-workflow-check.yaml" {
+        name = "nix flake check";
+        on = {
+          push = { };
+          workflow_call = { };
+        };
+        jobs.default = {
+          runs-on = "ubuntu-latest";
+          steps =
+            [
+              { uses = "actions/checkout@main"; }
+              config.githubActions.setUpNix
+              {
+                name = "nix flake check";
+                run = "nix flake -vv --print-build-logs --accept-flake-config check";
+              }
+            ]
+            |> lib.flatten;
+        };
+      };
       treefmt.settings.global.excludes = [ path_ ];
     };
 }
