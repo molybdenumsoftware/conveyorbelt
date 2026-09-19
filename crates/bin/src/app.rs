@@ -193,14 +193,7 @@ impl App {
 
         InstallSignalHandler
             .call()
-            .catch_error(|error| Shared::of(v))
-            .switch_map(|result| {
-                let Ok(SignalInstalled {
-                    signal_o: signal_observable,
-                }) = result
-                else {
-                    return Shared::of(Exit(1)).box_it();
-                };
+            .switch_map(|signal_installed| {
                 let serve_dir = ObtainServeDir.call().map(Control::from);
                 let signal = signal_observable.map(|_| Exit(1)).box_it();
 
