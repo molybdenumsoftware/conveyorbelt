@@ -54,7 +54,9 @@ in
         replace_with.features = [ "std" ];
         rxrust = {
           features = [ "scheduler" ];
-          version = "1.0.0-rc.3";
+          git = "https://github.com/molybdenumsoftware/rxRust.git";
+          branch = "catch_error";
+          version = "1.0.0-rc.5";
         };
         tokio.features = [
           "io-util"

@@ -1689,9 +1689,8 @@ checksum = "b39cdef0fa800fc44525c84ccb54a029961a8215f9619753635a9c0d2538d46d"
 
 [[package]]
 name = "rxrust"
-version = "1.0.0-rc.4"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "490057d22619bae92a08065efa1d6f6c35f28dfacb04b1426c42148aa516b1a9"
+version = "1.0.0-rc.5"
+source = "git+https://github.com/molybdenumsoftware/rxRust.git?branch=catch_error#4f60992aecb6a8686f3bb80ad2925c032a065b22"
 dependencies = [
  "crossbeam-utils",
  "futures-core",

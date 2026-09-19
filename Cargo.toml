@@ -18,14 +18,7 @@ version = "*"
 
 [workspace.dependencies.derive_more]
 default-features = false
-features = [
-    "as_ref",
-    "debug",
-    "deref",
-    "deref_mut",
-    "display",
-    "from",
-]
+features = ["as_ref", "debug", "deref", "deref_mut", "display", "from"]
 version = "*"
 
 [workspace.dependencies.futures]
@@ -69,9 +62,11 @@ features = ["std"]
 version = "*"
 
 [workspace.dependencies.rxrust]
+branch = "catch_error"
 default-features = false
 features = ["scheduler"]
-version = "1.0.0-rc.3"
+git = "https://github.com/molybdenumsoftware/rxRust.git"
+version = "1.0.0-rc.5"
 
 [workspace.dependencies.serde]
 default-features = false
