@@ -21,22 +21,14 @@ use crate::effects::Effect;
 //     Git2Error(git2::Error),
 // }
 
-#[derive(Debug, derive_more::Display)]
-pub(crate) enum FsWatchWatchingEvent {
-    #[display("event error: {_0}")]
-    Error(anyhow::Error),
-    #[display("change: {_0}")]
-    Change(FsChange),
-}
-
 #[derive(Debug, Clone)]
-pub(crate) struct FsChange {
+pub(crate) struct FsWatchWatchingEvent {
     pub(crate) path: PathBuf,
     pub(crate) kind: FsChangeKind,
     pub(crate) is_ignored: bool,
 }
 
-impl std::fmt::Display for FsChange {
+impl std::fmt::Display for FsWatchWatchingEvent {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         let path = &self.path;
         let kind = &self.kind;
@@ -82,7 +74,9 @@ pub(crate) struct FsWatchInit {
 
 #[derive(derive_more::Display)]
 #[display("watching")]
-pub(crate) struct FsWatching(pub SharedBoxedObservable<'static, FsWatchWatchingEvent, Infallible>);
+pub(crate) struct FsWatching(
+    pub SharedBoxedObservable<'static, FsWatchWatchingEvent, anyhow::Error>,
+);
 
 // TODO alias the heck out of `SharedBoxedObservable<'static, FsWatchWatchingEvent, Infallible>`
 impl Effect<FsWatching, anyhow::Error> for FsWatchInit {
@@ -96,9 +90,7 @@ impl Effect<FsWatching, anyhow::Error> for FsWatchInit {
             let event: notify::Event = match event {
                 Ok(event) => event,
                 Err(error) => {
-                    event_sender
-                        .blocking_send(FsWatchWatchingEvent::Error(error.into()))
-                        .unwrap();
+                    event_sender.blocking_send(Err(error.into())).unwrap();
 
                     return;
                 }
@@ -130,15 +122,13 @@ impl Effect<FsWatching, anyhow::Error> for FsWatchInit {
                     Ok(is_ignored) => is_ignored,
                     Err(error) => {
                         // TODO can we use try operator instead
-                        event_sender
-                            .blocking_send(FsWatchWatchingEvent::Error(error.into()))
-                            .unwrap();
+                        event_sender.blocking_send(Err(error.into())).unwrap();
                         return;
                     }
                 };
 
                 event_sender
-                    .blocking_send(FsWatchWatchingEvent::Change(FsChange {
+                    .blocking_send(Ok(FsWatchWatchingEvent {
                         path,
                         kind,
                         is_ignored,
@@ -154,7 +144,7 @@ impl Effect<FsWatching, anyhow::Error> for FsWatchInit {
             .context("begin watching")?;
 
         Ok(FsWatching(
-            Shared::from_stream(ReceiverStream::new(event_receiver)).box_it(),
+            Shared::from_stream_result(ReceiverStream::new(event_receiver)).box_it(),
         ))
     }
 }

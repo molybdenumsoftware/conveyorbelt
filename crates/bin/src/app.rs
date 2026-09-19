@@ -194,7 +194,7 @@ impl App {
         InstallSignalHandler
             .call()
             .switch_map(|signal_installed| {
-                let serve_dir = ObtainServeDir.call().map(Control::from);
+                let serve_dir = ObtainServeDir.call();
                 let signal = signal_installed.signal_o.map(|_| Exit(1)).box_it();
 
                 serve_dir.merge(signal).box_it()
