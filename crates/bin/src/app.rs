@@ -193,6 +193,7 @@ impl App {
 
         InstallSignalHandler
             .call()
+            .catch_error(|error| Shared::of(v))
             .switch_map(|result| {
                 let Ok(SignalInstalled {
                     signal_o: signal_observable,
