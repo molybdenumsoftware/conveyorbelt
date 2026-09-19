@@ -8,10 +8,9 @@
         default = [ ];
         apply = lib.concat [ "result" ];
       };
-      config.files.file.".gitignore" =
+      config.files.file.".gitignore".text =
         psArgs.config.gitignore
         |> lib.naturalSort
-        |> lib.concatLines
-        |> pkgs.writeText ".gitignore";
+        |> lib.concatLines;
     };
 }

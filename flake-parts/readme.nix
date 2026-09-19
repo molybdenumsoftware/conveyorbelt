@@ -7,7 +7,7 @@
     in
     {
       treefmt.settings.global.excludes = [ path_ ];
-      files.files.${path_}.text = ''
+      files.file.${path_}.text = ''
         # ${config.metadata.title}
 
         ${config.metadata.description}

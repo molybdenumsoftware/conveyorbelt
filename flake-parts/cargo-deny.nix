@@ -19,10 +19,7 @@
       path_ = "deny.toml";
     in
     {
-      files.files = [
-        {
-          inherit path_;
-          drv = pkgs.writers.writeTOML "deny.toml" {
+      files.file.${path_}.source = pkgs.writers.writeTOML "deny.toml" {
             licenses.allow = [
               "Apache-2.0"
               "CC0-1.0"
@@ -32,8 +29,6 @@
               "Zlib"
             ];
           };
-        }
-      ];
 
       treefmt.settings.global.excludes = [ path_ ];
 
