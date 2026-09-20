@@ -200,7 +200,6 @@ impl App {
             })
             .switch_map(|control| {
                 let serve_dir = ObtainServeDir.do_logged().await;
-                let signal = signal_installed.signal_o.map(|_| Exit(1)).box_it();
 
                 serve_dir.merge(signal).box_it()
             })
