@@ -3,6 +3,7 @@ use std::{convert::Infallible, path::PathBuf};
 use anyhow::anyhow;
 use rxrust::prelude::*;
 use tokio::try_join;
+use tracing::info;
 
 use crate::effects::{
     Effect as _,
@@ -192,13 +193,13 @@ impl App {
         let project_root = self.project_root.clone();
 
         Shared::from_future_result(InstallSignalHandler.do_logged())
-            .switch_map(|installed| installed.signal_o)
+            .switch_map(|installed| installed.signal_o.map_err(|_| unreachable!()))
             .map(|signal| {
                 info!("{signal}");
                 Exit(0)
             })
-            .switch_map(|signal_installed| {
-                let serve_dir = ObtainServeDir.call();
+            .switch_map(|control| {
+                let serve_dir = ObtainServeDir.do_logged().await;
                 let signal = signal_installed.signal_o.map(|_| Exit(1)).box_it();
 
                 serve_dir.merge(signal).box_it()
