@@ -191,8 +191,12 @@ impl App {
         let build_command_path = self.build_command_path.clone();
         let project_root = self.project_root.clone();
 
-        InstallSignalHandler
-            .call()
+        Shared::from_future_result(InstallSignalHandler.do_logged())
+            .switch_map(|installed| installed.signal_o)
+            .map(|signal| {
+                info!("{signal}");
+                Exit(0)
+            })
             .switch_map(|signal_installed| {
                 let serve_dir = ObtainServeDir.call();
                 let signal = signal_installed.signal_o.map(|_| Exit(1)).box_it();
