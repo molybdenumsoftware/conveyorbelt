@@ -5,7 +5,7 @@ use rxrust::prelude::*;
 use tokio::sync::mpsc;
 use tokio_stream::wrappers::ReceiverStream;
 
-use std::{convert::Infallible, path::PathBuf};
+use std::path::PathBuf;
 
 use crate::effects::Effect;
 

@@ -1,6 +1,5 @@
-use std::future::Future;
+use std::fmt::Display;
 
-use rxrust::{Shared, SharedBoxedObservable, prelude::*};
 use tracing::info;
 
 pub(crate) mod browser;
@@ -10,26 +9,24 @@ pub(crate) mod server;
 pub(crate) mod signal;
 
 pub(crate) trait Effect<T, E> {
-    fn effect(self) -> impl Future<Output = Result<T, E>> + Send + 'static;
-    fn call(self) -> SharedBoxedObservable<'static, T, E>
+    async fn effect(self) -> Result<T, E>;
+    async fn do_logged(self) -> Result<T, E>
     where
-        Self: Sized + std::fmt::Display,
-        T: std::fmt::Display + Send + 'static,
-        E: std::fmt::Display + Send + 'static,
+        Self: Sized + Display,
+        T: Display + Send + 'static,
+        E: Display + Send + 'static,
     {
         info!("effect: {self}");
 
-        // TODO actshually, we want to use from_future_result but rxrust doesn't seem to have error
-        // handling 🤷‍♂️:
-        // https://github.com/rxRust/rxRust/issues/279
-        Shared::from_future_result(self.effect())
-            .map_err(|error| {
-                info!("{error}");
-                error
-            })
-            .tap(|v| {
-                info!("{v}");
-            })
-            .box_it()
+        let result = self.effect().await;
+        match &result {
+            Ok(v) => {
+                info!("{v}")
+            }
+            Err(error) => {
+                info!("{error}")
+            }
+        }
+        result
     }
 }

@@ -46,26 +46,22 @@ impl ForStdoutputLine for std::process::Child {
         let child_stderr = self.stderr.take().expect("child has stderr handle");
         let mut child_stderr_lines = std::io::BufReader::new(child_stderr).lines();
 
-        let join_handle = std::thread::spawn(move || {
+        std::thread::spawn(move || {
             while let Some(Ok(line)) = child_stderr_lines.next() {
                 f(&line);
             }
-        });
-
-        join_handle
+        })
     }
 
     fn for_stdout_line(&mut self, mut f: impl FnMut(&str) + Send + 'static) -> Self::JoinHandle {
         let child_stdout = self.stdout.take().expect("child has stdout handle");
         let mut child_stdout_lines = std::io::BufReader::new(child_stdout).lines();
 
-        let join_handle = std::thread::spawn(move || {
+        std::thread::spawn(move || {
             while let Some(Ok(line)) = child_stdout_lines.next() {
                 f(&line);
             }
-        });
-
-        join_handle
+        })
     }
 }
 
@@ -79,13 +75,11 @@ impl ForStdoutputLine for tokio::process::Child {
         let child_stderr = self.stderr.take().expect("child has stderr handle");
         let mut stderr_lines = tokio::io::BufReader::new(child_stderr).lines();
 
-        let join_handle = tokio::spawn(async move {
+        tokio::spawn(async move {
             while let Ok(Some(line)) = stderr_lines.next_line().await {
                 f(&line).await;
             }
-        });
-
-        join_handle
+        })
     }
 
     fn for_stdout_line(
@@ -95,12 +89,10 @@ impl ForStdoutputLine for tokio::process::Child {
         let child_stdout = self.stdout.take().expect("child has stdout handle");
         let mut stdout_lines = tokio::io::BufReader::new(child_stdout).lines();
 
-        let join_handle = tokio::spawn(async move {
+        tokio::spawn(async move {
             while let Ok(Some(line)) = stdout_lines.next_line().await {
                 f(&line).await;
             }
-        });
-
-        join_handle
+        })
     }
 }
