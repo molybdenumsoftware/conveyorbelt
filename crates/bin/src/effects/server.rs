@@ -20,7 +20,7 @@ use crate::effects::Effect;
 pub(crate) struct ObtainServeDir;
 
 impl Effect<ServeDir, anyhow::Error> for ObtainServeDir {
-    async fn effect(self) -> Result<ServeDir, anyhow::Error> {
+    async fn effect(self) -> anyhow::Result<ServeDir> {
         Ok(ServeDir(Arc::new(
             TempDir::new().context("create serve dir")?,
         )))

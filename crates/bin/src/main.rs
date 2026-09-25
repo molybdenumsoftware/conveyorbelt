@@ -14,7 +14,7 @@ use rxrust::prelude::*;
 use crate::{
     app::App,
     cli::Args,
-    effects::{fswatch::FsWatchInit, server::ServeDir, signal::InstallSignalHandler},
+    effects::{fswatch::FsWatchInit, server::ServeDir, signal::InstallSignalListener},
 };
 
 fn main() -> anyhow::Result<()> {

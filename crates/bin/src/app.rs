@@ -11,7 +11,7 @@ use crate::effects::{
     build::BuildSpawn,
     fswatch::{FsWatchInit, FsWatchWatchingEvent},
     server::{ObtainServeDir, ServerSpawn},
-    signal::{InstallSignalHandler, SignalInstalled},
+    signal::{InstallSignalListener, SignalListenerInstalled},
 };
 
 // #[derive(Default, Debug)]
@@ -153,56 +153,19 @@ pub(crate) struct App {
     pub(crate) build_command_path: PathBuf,
 }
 
-enum Control<T> {
-    Exit(i32),
-    Happy(T),
-}
-
-impl<T: std::fmt::Debug> std::fmt::Debug for Control<T> {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        match self {
-            Self::Exit(code) => f.debug_tuple("Exit").field(code).finish(),
-            Self::Happy(value) => f.debug_tuple("Happy").field(value).finish(),
-        }
-    }
-}
-
-impl<T, E> From<Result<T, E>> for Control<T> {
-    fn from(result: Result<T, E>) -> Self {
-        match result {
-            Ok(ok) => Self::Happy(ok),
-            Err(_) => Self::Exit(1),
-        }
-    }
-}
-
-impl<T: Clone> Clone for Control<T> {
-    fn clone(&self) -> Self {
-        match self {
-            Self::Exit(code) => Self::Exit(code.clone()),
-            Self::Happy(value) => Self::Happy(value.clone()),
-        }
-    }
-}
-
 impl App {
     pub(crate) fn run(self) -> SharedBoxedObservable<'static, i32, Infallible> {
-        use Control::{Exit, Happy};
-
         let build_command_path = self.build_command_path.clone();
         let project_root = self.project_root.clone();
 
-        Shared::from_future_result(InstallSignalHandler.do_logged())
-            .switch_map(|installed| installed.signal_o.map_err(|_| unreachable!()))
-            .map(|signal| {
-                info!("{signal}");
-                Exit(0)
+        Shared::from_future_result(InstallSignalListener.do_logged())
+            .switch_map(|installed| {
+                Shared::from_future(installed.receive_f)
+                    .switch_map(|signal| Shared::throw_err(anyhow!(signal)).map(|_| unreachable!()))
             })
-            .switch_map(|control| {
-                let serve_dir = ObtainServeDir.do_logged().await;
-
-                serve_dir.merge(signal).box_it()
-            })
+            .merge(Shared::from_future(async {
+                Control::from(ObtainServeDir.do_logged().await)
+            }))
             .switch_map(move |control| {
                 let Happy(serve_dir) = control else {
                     return Shared::of(Exit(1)).box_it();
