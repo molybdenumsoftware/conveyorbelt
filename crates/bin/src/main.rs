@@ -37,16 +37,10 @@ async fn async_main() -> anyhow::Result<()> {
         build_command_path: build_command,
     };
 
-    let exit_code = app
-        .run()
-        // TODO why doesn't this work? rxrust bug?
-        // .first()
-        // .into_future()
-        .into_stream()
-        .next()
-        .await
-        .unwrap()
-        .unwrap();
+    let exit_code = match app.run().await {
+        Ok(_) => 0,
+        Err(exit_code) => exit_code,
+    };
 
     std::process::exit(exit_code);
 }

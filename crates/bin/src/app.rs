@@ -154,109 +154,18 @@ pub(crate) struct App {
 }
 
 impl App {
-    pub(crate) fn run(self) -> SharedBoxedObservable<'static, i32, Infallible> {
-        let build_command_path = self.build_command_path.clone();
-        let project_root = self.project_root.clone();
+    pub(crate) async fn run(self) -> Result<(), i32> {
+        let signal_listener_installed = InstallSignalListener.do_logged().await.map_err(|err| 1)?;
 
-        Shared::from_future_result(InstallSignalListener.do_logged())
-            .switch_map(|installed| {
-                Shared::from_future(installed.receive_f)
-                    .switch_map(|signal| Shared::throw_err(anyhow!(signal)).map(|_| unreachable!()))
-            })
-            .merge(Shared::from_future(async {
-                Control::from(ObtainServeDir.do_logged().await)
-            }))
-            .switch_map(move |control| {
-                let Happy(serve_dir) = control else {
-                    return Shared::of(Exit(1)).box_it();
-                };
-
-                let server_spawn = ServerSpawn {
-                    serve_dir: serve_dir.clone(),
-                }
-                .call();
-
-                let initial_build_spawn = BuildSpawn {
-                    path: build_command_path.clone(),
-                    serve_dir: serve_dir.clone(),
-                }
-                .effect();
-
-                let fswatch_init = FsWatchInit {
-                    path: project_root.clone(),
-                }
-                .effect();
-
-                Shared::from_future(async move {
-                    let (build_spawned, fs_watching) =
-                        try_join!(initial_build_spawn, fswatch_init)?;
-                    build_spawned.wait.effect().await?;
-                    Ok(fs_watching)
-                })
-                .zip(server_spawn)
-                // TODO should be switch_map?
-                .flat_map(|(fs_watching, server_running)| {
-                    let Ok(server_running) = server_running else {
-                        return Shared::of(Exit(1)).box_it();
-                    };
-                    let Ok(fs_watching) = fs_watching else {
-                        return server_running
-                            .shutdown_effect
-                            .call()
-                            .map(|_| Exit(1))
-                            .box_it();
-                    };
-                    Shared::of(Happy((server_running, fs_watching))).box_it()
-                })
-                .flat_map(|control| {
-                    let (server_running, fs_watching) = match control {
-                        Exit(code) => return Shared::of(Exit(code)).box_it(),
-                        Happy(happy) => happy,
-                    };
-
-                    BrowserSpawn {
-                        url: format!("http://{}/", server_running.address),
-                    }
-                    .call()
-                    // TODO switch_map
-                    .flat_map(|control| {
-                        let BrowserSpawnSuccess {
-                            browser,
-                            page_reload,
-                        } = match result {
-                            Exit(code) => return Shared::of(Exit(code)).box_it(),
-                            Happy(browser) => browser,
-                        };
-                        // TODO some circular composition
-                        fs_watching.0.flat_map(|watching_event| {
-                            let FsWatchWatchingEvent::Change(fs_change) = watching_event else {
-                                todo!()
-                            };
-                            BuildSpawn {
-                                path: build_command_path.clone(),
-                                serve_dir: serve_dir.clone(),
-                            }
-                            .call()
-                            .filter_map(|result| match result {
-                                Ok(_) => Some(()),
-                                Err(_) => None,
-                            });
-                        });
-
-                        todo!();
-                    })
-                    .box_it()
-                })
-                .box_it()
-            })
-            .tap(|v| {
-                //
-            })
-            .filter_map(|control| match control {
-                Exit(code) => Some(code),
-                Happy(_) => None,
-            })
-            .box_it()
+        let serve_dir = tokio::select! {
+            _ = signal_listener_installed.receive_f => {
+                return Err(1);
+            },
+            serve_dir = ObtainServeDir.do_logged() => {
+                serve_dir.map_err(|_err| 1)?
+            }
+        };
+        todo!()
     }
 
     // fn event_handler(&self, state: &mut State, event: Event) -> Vec<Control> {
