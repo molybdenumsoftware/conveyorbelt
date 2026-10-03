@@ -1,6 +1,8 @@
-use std::{convert::Infallible, path::PathBuf};
+use std::{convert::Infallible, path::PathBuf, task::Poll};
 
 use anyhow::anyhow;
+use futures::poll;
+use nix::libc::EPOLLRDNORM;
 use rxrust::prelude::*;
 use tokio::try_join;
 use tracing::info;
@@ -8,9 +10,9 @@ use tracing::info;
 use crate::effects::{
     Effect as _,
     browser::{BrowserSpawn, BrowserSpawnSuccess},
-    build::BuildSpawn,
-    fswatch::{FsWatchInit, FsWatchWatchingEvent},
-    server::{ObtainServeDir, ServerSpawn},
+    build::{BuildSpawn, BuildSpawned},
+    fswatch::{FsWatchInit, FsWatchWatchingEvent, FsWatching},
+    server::{ObtainServeDir, ServerRunning, ServerSpawn},
     signal::{InstallSignalListener, SignalListenerInstalled},
 };
 
@@ -164,10 +166,12 @@ impl App {
             }
         };
 
-        let server_f = ServerSpawn {
-            serve_dir: serve_dir.clone(),
-        }
-        .do_logged();
+        let server_f = Box::pin(
+            ServerSpawn {
+                serve_dir: serve_dir.clone(),
+            }
+            .do_logged(),
+        );
 
         let build_and_watch_f = async {
             tokio::try_join!(
@@ -183,7 +187,28 @@ impl App {
             )
         };
 
-        let (server, fs) = loop {};
+        let server: Option<ServerRunning> = None;
+        let build_and_watc: Option<(BuildSpawned, FsWatching)> = None;
+        let (server, fs) = loop {
+            match (poll!(server_f), &build_and_watch) {
+                (Poll::Pending, None) => {}
+                (Poll::Pending, Some(Err(_))) => return Err(1),
+                (Poll::Pending, Some(Ok(_))) => {}
+                (Poll::Ready(Err(_)), _) => return Err(1),
+                (Poll::Ready(Ok(server)), None) => {}
+                (Poll::Ready(Ok(server)), Some(_)) => todo!(),
+            }
+            match (&server, poll!(build_and_watch_f)) {
+                (None, Poll::Pending) => {}
+                (None, Poll::Ready(Err(_))) => return Err(1),
+                (None, Poll::Ready(Ok(v))) => build_and_watch = Some(v),
+                (Some(_), Poll::Pending) => {}
+                (Some(server), Poll::Ready(Err(_))) => {
+                    server.shutdown_effect.do_logged().await;
+                    return Err(1);
+                }
+            }
+        };
 
         let (_, server, fs) = tokio::select! {
             _ = InstallSignalListener.do_logged().await.map_err(|_| 1)?.receive_f => {
