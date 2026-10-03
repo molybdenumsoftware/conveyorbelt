@@ -155,10 +155,8 @@ pub(crate) struct App {
 
 impl App {
     pub(crate) async fn run(self) -> Result<(), i32> {
-        let signal_listener_installed = InstallSignalListener.do_logged().await.map_err(|_| 1)?;
-
         let serve_dir = tokio::select! {
-            _ = signal_listener_installed.receive_f => {
+            _ = InstallSignalListener.do_logged().await.map_err(|_| 1)?.receive_f => {
                 return Err(1);
             },
             serve_dir = ObtainServeDir.do_logged() => {
@@ -170,10 +168,13 @@ impl App {
             tokio::try_join!(
                 BuildSpawn {
                     path: self.build_command_path.clone(),
-                    serve_dir,
+                    serve_dir: serve_dir.clone(),
                 }
                 .do_logged(),
-                ServerSpawn { serve_dir }.do_logged(),
+                ServerSpawn {
+                    serve_dir: serve_dir.clone()
+                }
+                .do_logged(),
                 FsWatchInit {
                     path: self.project_root
                 }
@@ -182,13 +183,15 @@ impl App {
         };
 
         let (_, server, fs) = tokio::select! {
-            _ = signal_listener_installed.receive_f => {
+            _ = InstallSignalListener.do_logged().await.map_err(|_| 1)?.receive_f => {
                 return Err(1);
             },
             result = join => {
                 result.map_err(|_| 1)?
             },
         };
+
+        // TODO: spawn browser
 
         todo!()
     }
