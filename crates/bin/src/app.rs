@@ -164,15 +164,16 @@ impl App {
             }
         };
 
-        let join = async {
+        let server_f = ServerSpawn {
+            serve_dir: serve_dir.clone(),
+        }
+        .do_logged();
+
+        let build_and_watch_f = async {
             tokio::try_join!(
                 BuildSpawn {
                     path: self.build_command_path.clone(),
                     serve_dir: serve_dir.clone(),
-                }
-                .do_logged(),
-                ServerSpawn {
-                    serve_dir: serve_dir.clone()
                 }
                 .do_logged(),
                 FsWatchInit {
@@ -182,11 +183,13 @@ impl App {
             )
         };
 
+        let (server, fs) = loop {};
+
         let (_, server, fs) = tokio::select! {
             _ = InstallSignalListener.do_logged().await.map_err(|_| 1)?.receive_f => {
                 return Err(1);
             },
-            result = join => {
+            result = build_and_watch_f => {
                 result.map_err(|_| 1)?
             },
         };
