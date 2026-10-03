@@ -188,8 +188,8 @@ impl App {
         };
 
         let server: Option<ServerRunning> = None;
-        let build_and_watc: Option<(BuildSpawned, FsWatching)> = None;
-        let (server, fs) = loop {
+        let build_and_watch: Option<(BuildSpawned, FsWatching)> = None;
+        let (server, fs): (ServerRunning, FsWatching) = loop {
             match (poll!(server_f), &build_and_watch) {
                 (Poll::Pending, None) => {}
                 (Poll::Pending, Some(Err(_))) => return Err(1),
