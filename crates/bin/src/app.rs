@@ -118,11 +118,6 @@ enum ShuttingDownWatcherState {
 //     }
 // }
 
-pub(crate) enum BootstrapEvent {
-    Signal(SignalKind),
-    ServeDir(Result<crate::effects::server::ServeDir, anyhow::Error>),
-}
-
 pub(crate) enum InitializeEvent {
     Signal(SignalKind),
     ServerSpawn(Result<ServerRunning, anyhow::Error>),
@@ -169,35 +164,20 @@ pub(crate) struct App {
 
 impl App {
     pub(crate) async fn run(self) -> Result<(), i32> {
-        let (tx, rx) = mpsc::channel(0);
-
         let signal_future = InstallSignalListener
             .do_logged()
             .await
             .map_err(|_| 1)?
             .receive_f;
-        let mut tx_clone = tx.clone();
-        tokio::spawn(async move {
-            let signal = signal_future.await;
-            tx_clone.try_send(BootstrapEvent::Signal(signal)).unwrap()
-        });
 
-        let mut tx_clone = tx.clone();
-        tokio::spawn(async move {
-            let result = ObtainServeDir.do_logged().await;
-            tx_clone.try_send(BootstrapEvent::ServeDir(result)).unwrap()
-        });
-
-        let serve_dir = loop {
-            match rx.recv().await.unwrap() {
-                BootstrapEvent::Signal(s) => return Err(1),
-                BootstrapEvent::ServeDir(serve_dir) => break serve_dir.map_err(|_| 1)?,
-            };
+        let serve_dir = tokio::select! {
+            _ = signal_future => return Err(1),
+            result = ObtainServeDir.do_logged() => result.map_err(|_| 1)?,
         };
 
         /////////////
 
-        let (tx, rx) = mpsc::channel(0);
+        let (tx, mut rx) = mpsc::channel(0);
 
         let signal_future = InstallSignalListener
             .do_logged()
@@ -241,7 +221,9 @@ impl App {
             }
             .do_logged()
             .await;
-            tx_clone.try_send(InitializeEvent::BuildSpawn(result)).unwrap();
+            tx_clone
+                .try_send(InitializeEvent::BuildSpawn(result))
+                .unwrap();
         });
 
         let todo_loop = loop {
