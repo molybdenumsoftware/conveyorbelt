@@ -215,6 +215,7 @@ impl App {
                         return Ok(());
                     },
                     result = right => {
+                        // TODO: is build_spawned cancellation safe?
                         let (fs_watching, build_spawned) = result.map_err(|_| 1)?;
                         (server, fs_watching, build_spawned)
                     }

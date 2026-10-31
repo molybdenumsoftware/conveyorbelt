@@ -23,19 +23,10 @@ pub(crate) struct BuildSpawn {
     pub serve_dir: ServeDir,
 }
 
-#[derive(Debug, derive_more::Display)]
-#[display("{output}: {line}")]
-pub(crate) struct OutputLine {
-    output: Output,
-    line: String,
-}
-
 #[derive(derive_more::Debug, derive_more::Display)]
 #[display("spawn pid {pid}")]
 pub(crate) struct BuildSpawned {
     pub pid: Pid,
-    #[debug(skip)]
-    pub output_lines: SharedBoxedObservable<'static, OutputLine, Infallible>,
     pub wait: BuildWait,
 }
 
@@ -50,37 +41,14 @@ impl Effect<BuildSpawned, anyhow::Error> for BuildSpawn {
 
         let pid = Pid::from_raw(child.id().context("obtain build process id")? as i32);
 
-        let (line_sender, line_receiver) = mpsc::channel(1);
-        let line_sender_clone = line_sender.clone();
         let stdout_join_handle = child.for_stdout_line(move |line| {
-            let line = line.to_owned();
-            let line_sender_clone = line_sender_clone.clone();
-            async move {
-                line_sender_clone
-                    .send(OutputLine {
-                        output: Output::Out,
-                        line,
-                    })
-                    .await
-                    .unwrap();
-            }
-            .boxed()
+            eprintln!("stdout: {line}");
+            async {}.boxed()
         });
 
-        let line_sender_clone = line_sender.clone();
         let stderr_join_handle = child.for_stderr_line(move |line| {
-            let line = line.to_owned();
-            let line_sender_clone = line_sender_clone.clone();
-            async move {
-                line_sender_clone
-                    .send(OutputLine {
-                        output: Output::Err,
-                        line,
-                    })
-                    .await
-                    .unwrap();
-            }
-            .boxed()
+            eprintln!("stderr: {line}");
+            async {}.boxed()
         });
 
         let wait = BuildWait {
@@ -89,13 +57,7 @@ impl Effect<BuildSpawned, anyhow::Error> for BuildSpawn {
             stderr_join_handle,
         };
 
-        let output_lines = Shared::from_stream(ReceiverStream::new(line_receiver)).box_it();
-
-        Ok(BuildSpawned {
-            pid,
-            output_lines,
-            wait,
-        })
+        Ok(BuildSpawned { pid, wait })
     }
 }
 
@@ -132,14 +94,6 @@ impl Effect<BuildSucceeded, anyhow::Error> for BuildWait {
             None => bail!("build exited with no code"),
         })
     }
-}
-
-#[derive(Debug, Clone, Copy, derive_more::Display)]
-pub(crate) enum Output {
-    #[display("stdout")]
-    Out,
-    #[display("stderr")]
-    Err,
 }
 
 #[derive(Debug, derive_more::Display)]
