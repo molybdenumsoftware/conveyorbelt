@@ -1,8 +1,12 @@
 use std::{convert::Infallible, path::PathBuf, sync::mpsc::channel, task::Poll};
 
 use anyhow::anyhow;
-use futures::{channel::mpsc, poll};
-use nix::libc::EPOLLRDNORM;
+use futures::{
+    channel::mpsc,
+    future::{Either, select},
+    poll,
+};
+use nix::libc::{EPOLLRDNORM, select};
 use rxrust::prelude::*;
 use tokio::try_join;
 use tracing::info;
@@ -164,124 +168,72 @@ pub(crate) struct App {
 
 impl App {
     pub(crate) async fn run(self) -> Result<(), i32> {
-        let signal_future = InstallSignalListener
+        let mut signal_future = InstallSignalListener
             .do_logged()
             .await
             .map_err(|_| 1)?
             .receive_f;
 
         let serve_dir = tokio::select! {
-            _ = signal_future => return Err(1),
+            _ = &mut signal_future => return Ok(()),
             result = ObtainServeDir.do_logged() => result.map_err(|_| 1)?,
         };
 
         /////////////
 
-        let (tx, mut rx) = mpsc::channel(0);
-
-        let signal_future = InstallSignalListener
-            .do_logged()
-            .await
-            .map_err(|_| 1)?
-            .receive_f;
-        let mut tx_clone = tx.clone();
-        tokio::spawn(async move {
-            let signal = signal_future.await;
-            tx_clone.try_send(InitializeEvent::Signal(signal)).unwrap()
-        });
-
         let serve_dir_clone = serve_dir.clone();
-        let mut tx_clone = tx.clone();
-        tokio::spawn(async move {
-            let result = ServerSpawn {
-                serve_dir: serve_dir_clone,
-            }
-            .do_logged()
-            .await;
-            tx_clone
-                .try_send(InitializeEvent::ServerSpawn(result))
-                .unwrap()
-        });
-
-        let mut tx_clone = tx.clone();
-        tokio::spawn(async move {
-            let result = FsWatchInit {
-                path: self.project_root,
-            }
-            .do_logged()
-            .await;
-            tx_clone.try_send(InitializeEvent::FsWatch(result)).unwrap()
-        });
-
-        let mut tx_clone = tx.clone();
-        tokio::spawn(async move {
-            let result = BuildSpawn {
-                path: self.build_command_path.clone(),
-                serve_dir: serve_dir.clone(),
-            }
-            .do_logged()
-            .await;
-            tx_clone
-                .try_send(InitializeEvent::BuildSpawn(result))
-                .unwrap();
-        });
-
-        let todo_loop = loop {
-            match rx.recv().await.unwrap() {
-                InitializeEvent::Signal(_) => return Err(1),
-                InitializeEvent::ServerSpawn(s) => todo!(),
-                InitializeEvent::FsWatch(fs_watching) => todo!(),
-                InitializeEvent::BuildSpawn(build_spawned) => todo!(),
-            };
-        };
-
-        //////////////
-
-        let build_and_watch_f = async {
-            tokio::try_join!(
-                BuildSpawn {
-                    path: self.build_command_path.clone(),
-                    serve_dir: serve_dir.clone(),
+        let (server, fs_watching, build_spawned) = match select(
+            &mut signal_future,
+            select(
+                Box::pin(
+                    ServerSpawn {
+                        serve_dir: serve_dir_clone,
+                    }
+                    .do_logged(),
+                ),
+                Box::pin(futures::future::try_join(
+                    FsWatchInit {
+                        path: self.project_root,
+                    }
+                    .do_logged(),
+                    BuildSpawn {
+                        path: self.build_command_path.clone(),
+                        serve_dir: serve_dir.clone(),
+                    }
+                    .do_logged(),
+                )),
+            ),
+        )
+        .await
+        {
+            Either::Left((_, _)) => return Ok(()),
+            Either::Right((Either::Left((Err(_), _)), _)) => return Err(1),
+            Either::Right((Either::Left((Ok(server), right)), signal)) => {
+                tokio::select! {
+                    _ = signal => {
+                        server.shutdown_effect.do_logged().await.map_err(|_| 1)?;
+                        return Ok(());
+                    },
+                    result = right => {
+                        let (fs_watching, build_spawned) = result.map_err(|_| 1)?;
+                        (server, fs_watching, build_spawned)
+                    }
                 }
-                .do_logged(),
-                FsWatchInit {
-                    path: self.project_root
+            }
+            Either::Right((Either::Right((Err(_), _)), _)) => return Err(1),
+            Either::Right((
+                Either::Right((Ok((fs_watching, build_spawned)), server_f)),
+                signal,
+            )) => {
+                tokio::select! {
+                    _ = signal => return Ok(()),
+                    result = server_f => {
+                        let server = result.map_err(|_| 1)?;
+                        (server, fs_watching, build_spawned)
+                    }
                 }
-                .do_logged(),
-            )
+            }
         };
-
-        // let server: Option<ServerRunning> = None;
-        // let build_and_watch: Option<(BuildSpawned, FsWatching)> = None;
-        // let (server, fs): (ServerRunning, FsWatching) = loop {
-        //     match (poll!(server_f), &build_and_watch) {
-        //         (Poll::Pending, None) => {}
-        //         (Poll::Pending, Some(Err(_))) => return Err(1),
-        //         (Poll::Pending, Some(Ok(_))) => {}
-        //         (Poll::Ready(Err(_)), _) => return Err(1),
-        //         (Poll::Ready(Ok(server)), None) => {}
-        //         (Poll::Ready(Ok(server)), Some(_)) => todo!(),
-        //     }
-        //     match (&server, poll!(build_and_watch_f)) {
-        //         (None, Poll::Pending) => {}
-        //         (None, Poll::Ready(Err(_))) => return Err(1),
-        //         (None, Poll::Ready(Ok(v))) => build_and_watch = Some(v),
-        //         (Some(_), Poll::Pending) => {}
-        //         (Some(server), Poll::Ready(Err(_))) => {
-        //             server.shutdown_effect.do_logged().await;
-        //             return Err(1);
-        //         }
-        //     }
-        // };
-
-        // let (_, server, fs) = tokio::select! {
-        //     _ = InstallSignalListener.do_logged().await.map_err(|_| 1)?.receive_f => {
-        //         return Err(1);
-        //     },
-        //     result = build_and_watch_f => {
-        //         result.map_err(|_| 1)?
-        //     },
-        // };
 
         // TODO: spawn browser
 
