@@ -21,7 +21,7 @@ pub(crate) trait Effect<T, E> {
         let result = self.effect().await;
         match &result {
             Ok(v) => {
-                info!("{v}")
+                info!("event: {v}")
             }
             Err(error) => {
                 info!("{error}")

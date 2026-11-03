@@ -1,12 +1,7 @@
 use std::{convert::Infallible, path::PathBuf, sync::mpsc::channel, task::Poll};
 
-use anyhow::anyhow;
-use futures::{
-    channel::mpsc,
-    future::{Either, select},
-    poll,
-};
-use nix::libc::{EPOLLRDNORM, select};
+use futures::future::{Either::*, join3, select};
+
 use rxrust::prelude::*;
 use tokio::try_join;
 use tracing::info;
@@ -14,7 +9,7 @@ use tracing::info;
 use crate::effects::{
     Effect as _,
     browser::{BrowserSpawn, BrowserSpawnSuccess},
-    build::{BuildSpawn, BuildSpawned},
+    build::{BuildSignal, BuildSpawn, BuildSpawned},
     fswatch::{FsWatchInit, FsWatchWatchingEvent, FsWatching},
     server::{ObtainServeDir, ServerRunning, ServerSpawn},
     signal::{InstallSignalListener, SignalKind, SignalListenerInstalled},
@@ -179,7 +174,7 @@ impl App {
             result = ObtainServeDir.do_logged() => result.map_err(|_| 1)?,
         };
 
-        /////////////
+        // Start server, fs watcher, and first build.
 
         let serve_dir_clone = serve_dir.clone();
         let (server, fs_watching, build_spawned) = match select(
@@ -206,9 +201,9 @@ impl App {
         )
         .await
         {
-            Either::Left((_, _)) => return Ok(()),
-            Either::Right((Either::Left((Err(_), _)), _)) => return Err(1),
-            Either::Right((Either::Left((Ok(server), right)), signal)) => {
+            Left((_signal, _)) => return Ok(()),
+            Right((Left((Err(_server_spawn), _)), _)) => return Err(1),
+            Right((Left((Ok(server), right)), signal)) => {
                 tokio::select! {
                     _ = signal => {
                         server.shutdown_effect.do_logged().await.map_err(|_| 1)?;
@@ -221,11 +216,8 @@ impl App {
                     }
                 }
             }
-            Either::Right((Either::Right((Err(_), _)), _)) => return Err(1),
-            Either::Right((
-                Either::Right((Ok((fs_watching, build_spawned)), server_f)),
-                signal,
-            )) => {
+            Right((Right((Err(_), _)), _)) => return Err(1),
+            Right((Right((Ok((fs_watching, build_spawned)), server_f)), signal)) => {
                 tokio::select! {
                     _ = signal => return Ok(()),
                     result = server_f => {
@@ -236,7 +228,44 @@ impl App {
             }
         };
 
-        // TODO: spawn browser
+        // Wait until first build succedes.
+
+        match select(&mut signal_future, Box::pin(build_spawned.wait.do_logged())).await {
+            Left((_signal, build_wait)) => {
+                let build_terminate = BuildSignal {
+                    pid: build_spawned.pid,
+                    signal: nix::sys::signal::SIGTERM,
+                }
+                .do_logged();
+                let server_shutdown = server.shutdown_effect.do_logged();
+                join3(build_wait, build_terminate, server_shutdown).await;
+                return Ok(());
+            }
+            Right((Err(_), _)) => {
+                server.shutdown_effect.do_logged().await;
+                return Err(1);
+            }
+            Right((Ok(_build_succeeded), _)) => {}
+        }
+
+        // Spawn browser.
+
+        let Ok(browser) = BrowserSpawn {
+            url: format!("http://{}", server.address),
+        }
+        .do_logged()
+        .await
+        else {
+            server.shutdown_effect.do_logged().await;
+            return Err(1);
+        };
+
+        // Ready
+
+        // select: signal, 
+
+
+        // signal.await;
 
         todo!()
     }

@@ -6,9 +6,9 @@ use crate::effects::Effect;
 
 #[derive(Debug, derive_more::Display)]
 pub(crate) enum SignalKind {
-    #[display("SIGINT")]
+    #[display("signal: received: SIGINT")]
     Sigint,
-    #[display("SIGTERM")]
+    #[display("signal: received: SIGTERM")]
     Sigterm,
 }
 
@@ -17,7 +17,7 @@ pub(crate) enum SignalKind {
 pub(crate) struct InstallSignalListener;
 
 #[derive(derive_more::Display)]
-#[display("signal installed")]
+#[display("signal: handler installed")]
 pub(crate) struct SignalListenerInstalled {
     pub receive_f: BoxFuture<'static, SignalKind>,
 }

@@ -99,14 +99,19 @@ impl Effect<BuildSucceeded, anyhow::Error> for BuildWait {
 #[derive(Debug, derive_more::Display)]
 #[display("send {signal} to {pid}")]
 pub(crate) struct BuildSignal {
-    pid: Pid,
-    signal: Signal,
+    pub pid: Pid,
+    pub signal: Signal,
 }
 
-impl Effect<(), anyhow::Error> for BuildSignal {
-    async fn effect(self) -> Result<(), anyhow::Error> {
+#[derive(Debug, derive_more::Display)]
+#[display("signal sent")]
+pub struct SignalSent;
+
+impl Effect<SignalSent, anyhow::Error> for BuildSignal {
+    async fn effect(self) -> Result<SignalSent, anyhow::Error> {
         let Self { pid, signal } = self;
 
-        nix::sys::signal::kill(pid, signal).with_context(|| format!("send {signal} to {pid}"))
+        nix::sys::signal::kill(pid, signal).with_context(|| format!("send {signal} to {pid}"))?;
+        Ok(SignalSent)
     }
 }
