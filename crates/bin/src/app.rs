@@ -260,10 +260,11 @@ impl App {
             return Err(1);
         };
 
+        futures::future::pending::<()>().await;
+
         // Ready
 
-        // select: signal, 
-
+        // select: signal,
 
         // signal.await;
 
