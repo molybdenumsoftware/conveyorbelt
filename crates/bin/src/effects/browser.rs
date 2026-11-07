@@ -3,9 +3,9 @@ use chromiumoxide::{
     BrowserConfig,
     cdp::browser_protocol::target::{CloseTargetParams, GetTargetsParams},
 };
+use futures::{StreamExt as _, stream};
 use rxrust::prelude::*;
 use tempfile::tempdir;
-use tokio_stream::StreamExt as _;
 use tracing::debug;
 
 use crate::{common::TESTING_MODE, effects::Effect};
@@ -95,22 +95,16 @@ impl Effect<BrowserSpawnSuccess, BrowserSpawnError> for BrowserSpawn {
             .await
             .context("get targets")?;
 
-        let targets = targets.target_infos.as_slice();
-
-        let [target] = &targets else {
-            return Err(anyhow!("number of pages is not 1: {targets:?}").into());
-        };
-
-        if target.url != "chrome://newtab/" {
-            return Err(anyhow!("unexpected page: {target:?}").into());
+        for target in &targets.target_infos {
+            if target.url == "chrome://newtab/" {
+                browser
+                    .execute(CloseTargetParams {
+                        target_id: target.target_id.clone(),
+                    })
+                    .await
+                    .context("close newtab page")?;
+            }
         }
-
-        browser
-            .execute(CloseTargetParams {
-                target_id: target.target_id.clone(),
-            })
-            .await
-            .context("close newtab page")?;
 
         let websocket_address = browser.websocket_address().clone();
         let page = browser.new_page(self.url).await.context("create page")?;

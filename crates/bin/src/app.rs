@@ -1,18 +1,27 @@
-use std::{convert::Infallible, path::PathBuf, sync::mpsc::channel, task::Poll};
+use std::{
+    convert::Infallible,
+    path::PathBuf,
+    sync::{Arc, mpsc::channel},
+    task::Poll,
+};
 
 use futures::future::{Either::*, join3, select};
 
 use rxrust::prelude::*;
-use tokio::try_join;
+use tokio::{sync::RwLock, try_join};
+use tokio_stream::StreamExt as _;
 use tracing::info;
 
-use crate::effects::{
-    Effect as _,
-    browser::{BrowserSpawn, BrowserSpawnSuccess},
-    build::{BuildSignal, BuildSpawn, BuildSpawned},
-    fswatch::{FsWatchInit, FsWatchWatchingEvent, FsWatching},
-    server::{ObtainServeDir, ServerRunning, ServerSpawn},
-    signal::{InstallSignalListener, SignalKind, SignalListenerInstalled},
+use crate::{
+    common::{StateForTesting, TESTING_MODE},
+    effects::{
+        Effect as _,
+        browser::{BrowserSpawn, BrowserSpawnSuccess},
+        build::{BuildSignal, BuildSpawn, BuildSpawned},
+        fswatch::{FsWatchInit, FsWatchWatchingEvent, FsWatching},
+        server::{ObtainServeDir, ServerRunning, ServerSpawn},
+        signal::{InstallSignalListener, SignalKind, SignalListenerInstalled},
+    },
 };
 
 // #[derive(Default, Debug)]
@@ -177,7 +186,7 @@ impl App {
         // Start server, fs watcher, and first build.
 
         let serve_dir_clone = serve_dir.clone();
-        let (server, fs_watching, build_spawned) = match select(
+        let (server, mut fs_watching, build_spawned) = match select(
             &mut signal_future,
             select(
                 Box::pin(
@@ -260,15 +269,62 @@ impl App {
             return Err(1);
         };
 
-        futures::future::pending::<()>().await;
+        if std::env::var(TESTING_MODE).is_ok() {
+            let state_for_testing = StateForTesting {
+                serve_path: serve_dir.path().to_path_buf(),
+                serve_port: server.address.port(),
+                browser_debugging_address: browser.browser.websocket_address().to_string(),
+                browser_pid: browser.browser.pid(),
+            };
+            println!("{state_for_testing}");
+        }
+
+        // FS watch
+
+        // Instead of sharing memory keep an Option of a task and share browser handle with it
+        let build: Arc<RwLock<Option<BuildSpawned>>> = Arc::new(RwLock::new(None));
+        let build_clone = build.clone();
+        tokio::spawn(async move {
+            loop {
+                let mut guard = build_clone.write().await;
+                let Some(build) = guard.take() else {
+                    continue;
+                };
+                let do_logged = build.wait.do_logged();
+                match do_logged.await {
+                    Ok(_) => todo!(),
+                    Err(_) => todo!(),
+                };
+            }
+        });
+        for result in fs_watching.0.next().await {
+            match result {
+                Err(e) => eprintln!("{e}"),
+                Ok(event) => {
+                    if event.is_ignored {
+                        continue;
+                    }
+                    *build.write().await = Some(
+                        BuildSpawn {
+                            path: self.build_command_path.clone(),
+                            serve_dir: serve_dir.clone(),
+                        }
+                        .do_logged()
+                        .await
+                        .map_err(|_| 1)?,
+                    );
+                }
+            }
+        }
+
+        signal_future.await;
 
         // Ready
 
         // select: signal,
 
         // signal.await;
-
-        todo!()
+        return Ok(());
     }
 
     // fn event_handler(&self, state: &mut State, event: Event) -> Vec<Control> {

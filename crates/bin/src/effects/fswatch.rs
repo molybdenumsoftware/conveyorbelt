@@ -74,9 +74,7 @@ pub(crate) struct FsWatchInit {
 
 #[derive(derive_more::Display)]
 #[display("watching")]
-pub(crate) struct FsWatching(
-    pub SharedBoxedObservable<'static, FsWatchWatchingEvent, anyhow::Error>,
-);
+pub(crate) struct FsWatching(pub ReceiverStream<anyhow::Result<FsWatchWatchingEvent>>);
 
 // TODO alias the heck out of `SharedBoxedObservable<'static, FsWatchWatchingEvent, Infallible>`
 impl Effect<FsWatching, anyhow::Error> for FsWatchInit {
@@ -90,7 +88,9 @@ impl Effect<FsWatching, anyhow::Error> for FsWatchInit {
             let event: notify::Event = match event {
                 Ok(event) => event,
                 Err(error) => {
-                    event_sender.blocking_send(Err(error.into())).unwrap();
+                    event_sender
+                        .blocking_send(Err(anyhow::Error::from(error).context("fs watch error")))
+                        .unwrap();
 
                     return;
                 }
@@ -143,8 +143,6 @@ impl Effect<FsWatching, anyhow::Error> for FsWatchInit {
             .watch(&self.path, RecursiveMode::Recursive)
             .context("begin watching")?;
 
-        Ok(FsWatching(
-            Shared::from_stream_result(ReceiverStream::new(event_receiver)).box_it(),
-        ))
+        Ok(FsWatching(ReceiverStream::new(event_receiver)))
     }
 }

@@ -1223,9 +1223,9 @@ mod fixture {
 
         impl Subject {
             pub(crate) async fn connect_to_browser(&mut self) -> anyhow::Result<Browser> {
+                let state_for_testing = self.state_for_testing()?;
                 let (browser, handler) =
-                    Browser::connect(self.state_for_testing()?.browser_debugging_address).await?;
-
+                    Browser::connect(state_for_testing.browser_debugging_address).await?;
                 tokio::spawn(async move {
                     handler
                         .for_each(async |v| {
