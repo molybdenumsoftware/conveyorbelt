@@ -7,7 +7,7 @@ use tracing::info;
 pub struct GitToplevel(PathBuf);
 
 impl GitToplevel {
-    pub fn get() -> anyhow::Result<Self> {
+    pub fn resolve() -> anyhow::Result<Self> {
         let mut command = Command::new("git");
         command.args(["rev-parse", "--show-toplevel"]);
         let output = command.output().with_context(|| format!("{command:?}"))?;

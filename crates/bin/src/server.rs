@@ -12,32 +12,22 @@ use static_web_server::{
 };
 use tempfile::TempDir;
 use tokio::{sync::oneshot, task::JoinHandle};
-
-use crate::effects::Effect;
-
-#[derive(Debug, derive_more::Display)]
-#[display("obtain serve dir")]
-pub(crate) struct ObtainServeDir;
-
-impl Effect<ServeDir, anyhow::Error> for ObtainServeDir {
-    async fn inner(self) -> anyhow::Result<ServeDir> {
-        Ok(ServeDir(Arc::new(
-            TempDir::new().context("create serve dir")?,
-        )))
-    }
-}
+use tracing::debug;
 
 #[derive(Clone, Debug, derive_more::Deref, derive_more::Display)]
 #[display("serve dir: {_0:?}")]
 #[deref(forward)]
 pub(crate) struct ServeDir(Arc<TempDir>);
 
-#[derive(Debug, derive_more::Display)]
-#[display("server spawned: {address}")]
-pub(crate) struct ServerRunning {
-    pub address: SocketAddr,
-    pub shutdown_effect: ServerShutdown,
+impl ServeDir {
+    fn create() -> anyhow::Result<Self> {
+        debug!("create serve dir");
+        let dir = TempDir::new().context("create serve dir")?;
+        Ok(ServeDir(Arc::new(dir)))
+    }
 }
+
+// TODO #[display("server spawned: {address}")]
 
 #[derive(Debug, derive_more::Display)]
 pub(crate) enum ServerShutdownEvent {
@@ -50,21 +40,23 @@ pub(crate) enum ServerShutdownEvent {
 }
 
 #[derive(Debug, derive_more::Display)]
-#[display("serve {serve_dir:?}")]
-pub(crate) struct ServerSpawn {
-    pub serve_dir: ServeDir,
+#[display("serve {_0:?}")]
+pub(crate) struct Server {
+    field1: ServeDir,
+    address: SocketAddr,
+    shutdown_effect: ServerShutdown,
 }
 
-impl Effect<ServerRunning, anyhow::Error> for ServerSpawn {
-    async fn inner(self) -> Result<ServerRunning, anyhow::Error> {
+impl Server {
+    async fn start(dir: ServeDir) -> anyhow::Result<Self> {
         let handler_opts = RequestHandlerOpts {
-            root_dir: self.serve_dir.path().to_path_buf(),
+            root_dir: dir.path().to_path_buf(),
             compression: false,
             compression_static: false,
             cors: None,
             security_headers: false,
             cache_control_headers: false,
-            page404: self.serve_dir.path().join("404.html"),
+            page404: dir.path().join("404.html"),
             page50x: PathBuf::new(),
             index_files: ["index.html"].iter().map(|s| s.to_string()).collect(),
             log_remote_address: false,
@@ -106,7 +98,7 @@ impl Effect<ServerRunning, anyhow::Error> for ServerSpawn {
 
         let join_handle = tokio::spawn(async move {
             let result = server_task.await.map(|()| ServerShutdownSuccess);
-            drop(self.serve_dir);
+            drop(dir);
             result
         });
 

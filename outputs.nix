@@ -1,3 +1,4 @@
+# TODO vanilla nix, dev-only flake
 inputs:
 inputs.flake-parts.lib.mkFlake { inherit inputs; } {
   _module.args.rootPath = ./.;

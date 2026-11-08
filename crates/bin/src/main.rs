@@ -4,7 +4,7 @@ mod cli;
 #[path = "../common.rs"]
 mod common;
 mod fswatch;
-mod git_toplevel;
+mod git;
 mod logging;
 mod server;
 mod signal;
@@ -13,19 +13,17 @@ use anyhow::Context;
 use futures::{FutureExt as _, StreamExt};
 use rxrust::prelude::*;
 
-use crate::cli::Args;
+use crate::{cli::Args, git::GitToplevel, signal::SignalListener};
 
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
     logging::init();
     let Args { build_command } = crate::cli::parse();
-
-    let git_toplevel = git_toplevel::get().context("get git toplevel")?;
-
-    let mut signal_future = InstallSignalListener.do_logged().await?.receive_f;
+    let toplevel = GitToplevel::resolve().context("get git toplevel")?;
+    let mut signal = SignalListener::create().context("listen on signals")?;
 
     let serve_dir = tokio::select! {
-        _ = &mut signal_future => return Ok(()),
+        _ = &mut signal => return Ok(()),
         result = ObtainServeDir.do_logged() => result?,
     };
 
@@ -33,7 +31,7 @@ async fn main() -> anyhow::Result<()> {
 
     let serve_dir_clone = serve_dir.clone();
     let (server, mut fs_watching, build_spawned) = match select(
-        &mut signal_future,
+        &mut signal,
         select(
             Box::pin(
                 ServerSpawn {
@@ -85,7 +83,7 @@ async fn main() -> anyhow::Result<()> {
 
     // Wait until first build succedes.
 
-    match select(&mut signal_future, Box::pin(build_spawned.wait.do_logged())).await {
+    match select(&mut signal, Box::pin(build_spawned.wait.do_logged())).await {
         Left((_signal, build_wait)) => {
             let build_terminate = BuildSignal {
                 pid: build_spawned.pid,
@@ -172,6 +170,6 @@ async fn main() -> anyhow::Result<()> {
         }
     }
 
-    signal_future.await;
+    signal.await;
     Ok(())
 }
