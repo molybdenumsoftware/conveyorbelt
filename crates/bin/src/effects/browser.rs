@@ -57,7 +57,7 @@ pub(crate) struct BrowserSpawnSuccess {
 }
 
 impl Effect<BrowserSpawnSuccess, BrowserSpawnError> for BrowserSpawn {
-    async fn effect(self) -> Result<BrowserSpawnSuccess, BrowserSpawnError> {
+    async fn inner(self) -> Result<BrowserSpawnSuccess, BrowserSpawnError> {
         let browser_data_dir = tempdir().context("create data dir")?;
         debug!("browser data dir: {browser_data_dir:?}");
 
@@ -142,7 +142,7 @@ pub(crate) struct PageReloadSuccess {
 }
 
 impl Effect<PageReloadSuccess, (PageReloadError, Self)> for PageReload {
-    async fn effect(self) -> Result<PageReloadSuccess, (PageReloadError, Self)> {
+    async fn inner(self) -> Result<PageReloadSuccess, (PageReloadError, Self)> {
         match self.page.reload().await.context("reloading") {
             Ok(_) => Ok(PageReloadSuccess { page_reload: self }),
             Err(error) => Err((error.into(), self)),

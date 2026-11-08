@@ -23,7 +23,7 @@ pub(crate) struct SignalListenerInstalled {
 }
 
 impl Effect<SignalListenerInstalled, anyhow::Error> for InstallSignalListener {
-    async fn effect(self) -> Result<SignalListenerInstalled, anyhow::Error> {
+    async fn inner(self) -> Result<SignalListenerInstalled, anyhow::Error> {
         let mut sigint = signal::unix::signal(signal::unix::SignalKind::interrupt())
             .context("create sigint listener")?;
 

@@ -31,7 +31,7 @@ pub(crate) struct BuildSpawned {
 }
 
 impl Effect<BuildSpawned, anyhow::Error> for BuildSpawn {
-    async fn effect(self) -> Result<BuildSpawned, anyhow::Error> {
+    async fn inner(self) -> Result<BuildSpawned, anyhow::Error> {
         let mut child = Command::new(self.path)
             .env(SERVE_PATH, self.serve_dir.path())
             .stdout(Stdio::piped())
@@ -74,7 +74,7 @@ pub(crate) struct BuildWait {
 pub(crate) struct BuildSucceeded;
 
 impl Effect<BuildSucceeded, anyhow::Error> for BuildWait {
-    async fn effect(self) -> Result<BuildSucceeded, anyhow::Error> {
+    async fn inner(self) -> Result<BuildSucceeded, anyhow::Error> {
         let Self {
             mut child,
             stdout_join_handle,
@@ -108,7 +108,7 @@ pub(crate) struct BuildSignal {
 pub struct SignalSent;
 
 impl Effect<SignalSent, anyhow::Error> for BuildSignal {
-    async fn effect(self) -> Result<SignalSent, anyhow::Error> {
+    async fn inner(self) -> Result<SignalSent, anyhow::Error> {
         let Self { pid, signal } = self;
 
         nix::sys::signal::kill(pid, signal).with_context(|| format!("send {signal} to {pid}"))?;

@@ -78,7 +78,7 @@ pub(crate) struct FsWatching(pub ReceiverStream<anyhow::Result<FsWatchWatchingEv
 
 // TODO alias the heck out of `SharedBoxedObservable<'static, FsWatchWatchingEvent, Infallible>`
 impl Effect<FsWatching, anyhow::Error> for FsWatchInit {
-    async fn effect(self) -> Result<FsWatching, anyhow::Error> {
+    async fn inner(self) -> Result<FsWatching, anyhow::Error> {
         // TODO add more error context
         let repository = Repository::open_from_env().context("open git repo")?;
 

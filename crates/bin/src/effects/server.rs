@@ -20,7 +20,7 @@ use crate::effects::Effect;
 pub(crate) struct ObtainServeDir;
 
 impl Effect<ServeDir, anyhow::Error> for ObtainServeDir {
-    async fn effect(self) -> anyhow::Result<ServeDir> {
+    async fn inner(self) -> anyhow::Result<ServeDir> {
         Ok(ServeDir(Arc::new(
             TempDir::new().context("create serve dir")?,
         )))
@@ -56,7 +56,7 @@ pub(crate) struct ServerSpawn {
 }
 
 impl Effect<ServerRunning, anyhow::Error> for ServerSpawn {
-    async fn effect(self) -> Result<ServerRunning, anyhow::Error> {
+    async fn inner(self) -> Result<ServerRunning, anyhow::Error> {
         let handler_opts = RequestHandlerOpts {
             root_dir: self.serve_dir.path().to_path_buf(),
             compression: false,
@@ -132,7 +132,7 @@ pub(crate) struct ServerShutdown {
 pub(crate) struct ServerShutdownSuccess;
 
 impl Effect<ServerShutdownSuccess, anyhow::Error> for ServerShutdown {
-    async fn effect(self) -> anyhow::Result<ServerShutdownSuccess> {
+    async fn inner(self) -> anyhow::Result<ServerShutdownSuccess> {
         self.shutdown_sender.send(()).unwrap();
         self.join_handle
             .await
