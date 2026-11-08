@@ -10,36 +10,43 @@ use tokio::{
     task,
 };
 use tokio_stream::wrappers::ReceiverStream;
+use tracing::info;
 
 use crate::{
     common::{ForStdoutputLine as _, SERVE_PATH},
-    effects::{Effect, server::ServeDir},
+    server::ServeDir,
 };
 
-#[derive(Debug, derive_more::Display)]
-#[display("spawn {path:?} with serve dir {serve_dir:?}")]
-pub(crate) struct BuildSpawn {
-    pub path: PathBuf,
-    pub serve_dir: ServeDir,
+// TODO #[display("spawn {path:?} with serve dir {serve_dir:?}")]
+// TODO #[display("spawn pid {pid}")]
+
+#[derive(Debug)]
+pub struct Build {
+    child: Child,
+    stdout_join_handle: task::JoinHandle<()>,
+    stderr_join_handle: task::JoinHandle<()>,
 }
 
-#[derive(derive_more::Debug, derive_more::Display)]
-#[display("spawn pid {pid}")]
-pub(crate) struct BuildSpawned {
-    pub pid: Pid,
-    pub wait: BuildWait,
-}
+#[derive(Debug)]
+pub struct BuildCommandPath(PathBuf);
 
-impl Effect<BuildSpawned, anyhow::Error> for BuildSpawn {
-    async fn inner(self) -> Result<BuildSpawned, anyhow::Error> {
-        let mut child = Command::new(self.path)
-            .env(SERVE_PATH, self.serve_dir.path())
+impl Build {
+    pub fn pid(&self) -> anyhow::Result<Pid> {
+        Ok(Pid::from_raw(
+            self.child.id().context("get build pid")? as i32
+        ))
+    }
+
+    async fn spawn(serve_dir: ServeDir, command: BuildCommandPath) -> anyhow::Result<Self> {
+        let mut command = Command::new(command);
+
+        command
+            .env(SERVE_PATH, serve_dir.path())
             .stdout(Stdio::piped())
-            .stderr(Stdio::piped())
-            .spawn()
-            .context("spawn build process")?;
+            .stderr(Stdio::piped());
 
-        let pid = Pid::from_raw(child.id().context("obtain build process id")? as i32);
+        info!("spawn build {command}");
+        let mut child = command.spawn().context("build spawn")?;
 
         let stdout_join_handle = child.for_stdout_line(move |line| {
             eprintln!("stdout: {line}");
@@ -51,23 +58,15 @@ impl Effect<BuildSpawned, anyhow::Error> for BuildSpawn {
             async {}.boxed()
         });
 
-        let wait = BuildWait {
+        Ok(Self {
             child,
             stdout_join_handle,
             stderr_join_handle,
-        };
-
-        Ok(BuildSpawned { pid, wait })
+        })
     }
 }
 
-#[derive(Debug, derive_more::Display)]
-#[display("wait for {child:?}")]
-pub(crate) struct BuildWait {
-    child: Child,
-    stdout_join_handle: task::JoinHandle<()>,
-    stderr_join_handle: task::JoinHandle<()>,
-}
+// TODO #[display("wait for {child:?}")]
 
 #[derive(Debug, derive_more::Display)]
 #[display("build succeeded")]
