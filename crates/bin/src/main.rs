@@ -1,27 +1,26 @@
+mod browser;
+mod build;
 mod cli;
 #[path = "../common.rs"]
 mod common;
-mod effects;
+mod fswatch;
+mod git_toplevel;
 mod logging;
+mod server;
+mod signal;
 
 use anyhow::Context;
 use futures::{FutureExt as _, StreamExt};
 use rxrust::prelude::*;
 
-use crate::{
-    app::App,
-    cli::Args,
-    effects::{fswatch::FsWatchInit, server::ServeDir, signal::InstallSignalListener},
-};
+use crate::cli::Args;
 
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
     logging::init();
     let Args { build_command } = crate::cli::parse();
 
-    // TODO effect?
-    let project_root =
-        crate::project_path::resolve(&std::env::current_dir().context("obtain current dir")?)?;
+    let git_toplevel = git_toplevel::get().context("get git toplevel")?;
 
     let mut signal_future = InstallSignalListener.do_logged().await?.receive_f;
 
