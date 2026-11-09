@@ -3,7 +3,6 @@ use std::{convert::Infallible, path::PathBuf, process::Stdio};
 use anyhow::{Context, bail};
 use futures::FutureExt;
 use nix::{sys::signal::Signal, unistd::Pid};
-use rxrust::prelude::*;
 use tokio::{
     process::{Child, Command},
     sync::mpsc,
@@ -37,15 +36,15 @@ impl Build {
         ))
     }
 
-    async fn spawn(serve_dir: ServeDir, command: BuildCommandPath) -> anyhow::Result<Self> {
-        let mut command = Command::new(command);
+    pub async fn spawn(serve_dir: ServeDir, command: BuildCommandPath) -> anyhow::Result<Self> {
+        let mut command = Command::new(command.0);
 
         command
             .env(SERVE_PATH, serve_dir.path())
             .stdout(Stdio::piped())
             .stderr(Stdio::piped());
 
-        info!("spawn build {command}");
+        info!("spawn build {command:?}");
         let mut child = command.spawn().context("build spawn")?;
 
         let stdout_join_handle = child.for_stdout_line(move |line| {
@@ -64,16 +63,8 @@ impl Build {
             stderr_join_handle,
         })
     }
-}
 
-// TODO #[display("wait for {child:?}")]
-
-#[derive(Debug, derive_more::Display)]
-#[display("build succeeded")]
-pub(crate) struct BuildSucceeded;
-
-impl Effect<BuildSucceeded, anyhow::Error> for BuildWait {
-    async fn inner(self) -> Result<BuildSucceeded, anyhow::Error> {
+    pub async fn wait(self) -> anyhow::Result<Option<i32>> {
         let Self {
             mut child,
             stdout_join_handle,
@@ -85,32 +76,19 @@ impl Effect<BuildSucceeded, anyhow::Error> for BuildWait {
             .await
             .with_context(|| format!("wait on {child:?}"))?
             .code();
+
         tokio::join!(stdout_join_handle, stderr_join_handle);
 
-        Ok(match code {
-            Some(0) => BuildSucceeded,
-            Some(non_zero) => bail!("build exited with: {non_zero}"),
-            None => bail!("build exited with no code"),
-        })
+        Ok(code)
     }
 }
+// TODO Some(non_zero) => bail!("build exited with: {non_zero}"),
+// TODO None => bail!("build exited with no code"),
 
-#[derive(Debug, derive_more::Display)]
-#[display("send {signal} to {pid}")]
-pub(crate) struct BuildSignal {
-    pub pid: Pid,
-    pub signal: Signal,
-}
+// TODO #[display("wait for {child:?}")]
 
-#[derive(Debug, derive_more::Display)]
-#[display("signal sent")]
-pub struct SignalSent;
+// TODO #[display("build succeeded")]
 
-impl Effect<SignalSent, anyhow::Error> for BuildSignal {
-    async fn inner(self) -> Result<SignalSent, anyhow::Error> {
-        let Self { pid, signal } = self;
+// TODO #[display("send {signal} to {pid}")]
 
-        nix::sys::signal::kill(pid, signal).with_context(|| format!("send {signal} to {pid}"))?;
-        Ok(SignalSent)
-    }
-}
+// TODO #[display("signal sent")]

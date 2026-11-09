@@ -10,10 +10,16 @@ mod server;
 mod signal;
 
 use anyhow::Context;
-use futures::{FutureExt as _, StreamExt};
-use rxrust::prelude::*;
+use futures::{FutureExt as _, StreamExt, future::select};
+use tokio::select;
 
-use crate::{cli::Args, git::GitToplevel, server::ServeDir, signal::SignalListener};
+use crate::{
+    cli::Args,
+    fswatch::FsWatch,
+    git::GitToplevel,
+    server::{ServeDir, Server},
+    signal::SignalListener,
+};
 
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
@@ -21,29 +27,16 @@ async fn main() -> anyhow::Result<()> {
     let Args { build_command } = crate::cli::parse();
     let toplevel = GitToplevel::resolve().context("get git toplevel")?;
     let mut signal = SignalListener::create().context("listen on signals")?;
+    let serve_dir = ServeDir::create()?;
+    let fs_watch = FsWatch::init(&toplevel).context("init fs watch")?;
 
-    let serve_dir = tokio::select! {
-        _ = &mut signal => return Ok(()),
-        result = ServeDir::create() => result?,
-    };
+    // TODO nix::sys::signal::kill(pid, signal).with_context(|| format!("send {signal} to {pid}"))?;
 
-    // Start server, fs watcher, and first build.
-
-    let serve_dir_clone = serve_dir.clone();
-    let (server, mut fs_watching, build_spawned) = match select(
+    let (server, build_spawned) = match select(
         &mut signal,
         select(
-            Box::pin(
-                ServerSpawn {
-                    serve_dir: serve_dir_clone,
-                }
-                .do_logged(),
-            ),
+            Box::pin(Server::start(serve_dir.clone())),
             Box::pin(futures::future::try_join(
-                FsWatchInit {
-                    path: self.project_root,
-                }
-                .do_logged(),
                 BuildSpawn {
                     path: self.build_command_path.clone(),
                     serve_dir: serve_dir.clone(),

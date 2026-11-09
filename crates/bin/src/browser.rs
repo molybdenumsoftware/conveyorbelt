@@ -4,7 +4,6 @@ use chromiumoxide::{
     cdp::browser_protocol::target::{CloseTargetParams, GetTargetsParams},
 };
 use futures::{StreamExt as _, stream};
-use rxrust::prelude::*;
 use tempfile::tempdir;
 use tracing::{debug, info};
 

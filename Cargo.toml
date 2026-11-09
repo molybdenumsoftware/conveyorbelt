@@ -61,13 +61,6 @@ default-features = false
 features = ["std"]
 version = "*"
 
-[workspace.dependencies.rxrust]
-branch = "catch_error"
-default-features = false
-features = ["scheduler"]
-git = "https://github.com/molybdenumsoftware/rxRust.git"
-version = "1.0.0-rc.5"
-
 [workspace.dependencies.serde]
 default-features = false
 version = "*"

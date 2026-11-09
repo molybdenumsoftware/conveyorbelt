@@ -1,14 +1,12 @@
-use anyhow::Context;
+use anyhow::{Context, Ok};
 use git2::Repository;
 use notify::{RecursiveMode, Watcher as _};
-use rxrust::prelude::*;
 use tokio::sync::mpsc;
 use tokio_stream::wrappers::ReceiverStream;
 
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
-use crate::effects::Effect;
-
+// TODO logging
 // #[derive(derive_more::Display)]
 // pub(crate) enum FsWatchInitEvent {
 //     #[display("watcher creation fail: {_0}")]
@@ -22,13 +20,13 @@ use crate::effects::Effect;
 // }
 
 #[derive(Debug, Clone)]
-pub(crate) struct FsWatchWatchingEvent {
+pub(crate) struct FsChange {
     pub(crate) path: PathBuf,
     pub(crate) kind: FsChangeKind,
     pub(crate) is_ignored: bool,
 }
 
-impl std::fmt::Display for FsWatchWatchingEvent {
+impl std::fmt::Display for FsChange {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         let path = &self.path;
         let kind = &self.kind;
@@ -66,35 +64,17 @@ pub(crate) enum FsChangeKind {
     Remove(notify::event::RemoveKind),
 }
 
-#[derive(Debug, derive_more::Display)]
-#[display("watch {path:?}")]
-pub(crate) struct FsWatchInit {
-    pub path: PathBuf,
-}
+#[derive(Debug)]
+pub(crate) struct FsWatch(pub ReceiverStream<anyhow::Result<Vec<FsChange>>>);
 
-#[derive(derive_more::Display)]
-#[display("watching")]
-pub(crate) struct FsWatching(pub ReceiverStream<anyhow::Result<FsWatchWatchingEvent>>);
-
-// TODO alias the heck out of `SharedBoxedObservable<'static, FsWatchWatchingEvent, Infallible>`
-impl Effect<FsWatching, anyhow::Error> for FsWatchInit {
-    async fn inner(self) -> Result<FsWatching, anyhow::Error> {
-        // TODO add more error context
+impl FsWatch {
+    pub fn init(path: impl AsRef<Path>) -> anyhow::Result<Self> {
         let repository = Repository::open_from_env().context("open git repo")?;
-
         let (event_sender, event_receiver) = mpsc::channel(1);
 
-        let event_handler = move |event: Result<notify::Event, notify::Error>| {
-            let event: notify::Event = match event {
-                Ok(event) => event,
-                Err(error) => {
-                    event_sender
-                        .blocking_send(Err(anyhow::Error::from(error).context("fs watch error")))
-                        .unwrap();
-
-                    return;
-                }
-            };
+        let event_handler = move |result| -> anyhow::Result<Vec<FsChange>> {
+            let event = result.context("fs watch error")?;
+            let changes = Vec::new();
 
             let kind = match event.kind {
                 notify::EventKind::Create(kind) => FsChangeKind::Create(kind),
@@ -111,38 +91,33 @@ impl Effect<FsWatching, anyhow::Error> for FsWatchInit {
                     FsChangeKind::Modify(ModifyKind::Name(rename))
                 }
                 notify::EventKind::Remove(kind) => FsChangeKind::Remove(kind),
-                _ => return,
+                _ => return Ok(changes),
             };
 
             for path in event.paths {
-                let is_ignored = match repository
+                let is_ignored = repository
                     .is_path_ignored(&path)
-                    .context("wether path ignored")
-                {
-                    Ok(is_ignored) => is_ignored,
-                    Err(error) => {
-                        // TODO can we use try operator instead
-                        event_sender.blocking_send(Err(error.into())).unwrap();
-                        return;
-                    }
-                };
+                    .context("ask wether path is ignored")?;
 
-                event_sender
-                    .blocking_send(Ok(FsWatchWatchingEvent {
-                        path,
-                        kind,
-                        is_ignored,
-                    }))
-                    .unwrap();
+                changes.push(FsChange {
+                    path,
+                    kind,
+                    is_ignored,
+                });
             }
+
+            Ok(changes)
         };
 
-        let mut watcher = notify::recommended_watcher(event_handler).context("create watcher")?;
+        let mut watcher = notify::recommended_watcher(|event| {
+            event_sender.blocking_send(event_handler(event)).unwrap();
+        })
+        .context("create watcher")?;
 
         watcher
-            .watch(&self.path, RecursiveMode::Recursive)
+            .watch(path.as_ref(), RecursiveMode::Recursive)
             .context("begin watching")?;
 
-        Ok(FsWatching(ReceiverStream::new(event_receiver)))
+        Ok(FsWatch(ReceiverStream::new(event_receiver)))
     }
 }

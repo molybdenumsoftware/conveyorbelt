@@ -52,12 +52,6 @@ in
           features = [ "tokio1" ];
         };
         replace_with.features = [ "std" ];
-        rxrust = {
-          features = [ "scheduler" ];
-          git = "https://github.com/molybdenumsoftware/rxRust.git";
-          branch = "catch_error";
-          version = "1.0.0-rc.5";
-        };
         tokio.features = [
           "io-util"
           "process"
@@ -85,8 +79,6 @@ in
           "hyper"
           "nix"
           "notify"
-          "replace_with"
-          "rxrust"
           "serde"
           "serde_json"
           "static-web-server"

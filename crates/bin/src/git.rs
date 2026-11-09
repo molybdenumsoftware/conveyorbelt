@@ -3,7 +3,7 @@ use std::{path::PathBuf, process::Command};
 use anyhow::{Context as _, Ok, bail};
 use tracing::info;
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, derive_more::AsRef)]
 pub struct GitToplevel(PathBuf);
 
 impl GitToplevel {

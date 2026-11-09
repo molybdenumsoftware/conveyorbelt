@@ -29,12 +29,6 @@ workspace = true
 [dependencies.notify]
 workspace = true
 
-[dependencies.replace_with]
-workspace = true
-
-[dependencies.rxrust]
-workspace = true
-
 [dependencies.serde]
 workspace = true
 

@@ -38,7 +38,7 @@ pub(crate) struct Server {
 }
 
 impl Server {
-    async fn start(dir: ServeDir) -> anyhow::Result<Self> {
+    pub async fn start(dir: ServeDir) -> anyhow::Result<Self> {
         let handler_opts = RequestHandlerOpts {
             root_dir: dir.path().to_path_buf(),
             compression: false,
