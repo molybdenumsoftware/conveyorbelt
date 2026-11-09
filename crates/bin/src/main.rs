@@ -13,7 +13,7 @@ use anyhow::Context;
 use futures::{FutureExt as _, StreamExt};
 use rxrust::prelude::*;
 
-use crate::{cli::Args, git::GitToplevel, signal::SignalListener};
+use crate::{cli::Args, git::GitToplevel, server::ServeDir, signal::SignalListener};
 
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
@@ -24,7 +24,7 @@ async fn main() -> anyhow::Result<()> {
 
     let serve_dir = tokio::select! {
         _ = &mut signal => return Ok(()),
-        result = ObtainServeDir.do_logged() => result?,
+        result = ServeDir::create() => result?,
     };
 
     // Start server, fs watcher, and first build.

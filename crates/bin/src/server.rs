@@ -20,9 +20,9 @@ use tracing::debug;
 pub(crate) struct ServeDir(Arc<TempDir>);
 
 impl ServeDir {
-    fn create() -> anyhow::Result<Self> {
+    pub fn create() -> anyhow::Result<Self> {
         debug!("create serve dir");
-        let dir = TempDir::new().context("create serve dir")?;
+        let dir = TempDir::new().context("create temp dir")?;
         Ok(ServeDir(Arc::new(dir)))
     }
 }
@@ -30,21 +30,11 @@ impl ServeDir {
 // TODO #[display("server spawned: {address}")]
 
 #[derive(Debug, derive_more::Display)]
-pub(crate) enum ServerShutdownEvent {
-    #[display("shutdown")]
-    Shutdown,
-    #[display("shutdown error: {_0}")]
-    ShutdownError(hyper::Error),
-    #[display("task join error: {_0}")]
-    TaskJoinError(tokio::task::JoinError),
-}
-
-#[derive(Debug, derive_more::Display)]
-#[display("serve {_0:?}")]
+#[display("server at {address}")]
 pub(crate) struct Server {
-    field1: ServeDir,
     address: SocketAddr,
-    shutdown_effect: ServerShutdown,
+    shutdown_sender: oneshot::Sender<()>,
+    join: JoinHandle<hyper::Result<()>>,
 }
 
 impl Server {
@@ -75,8 +65,7 @@ impl Server {
         };
 
         let address = SocketAddr::from((IpAddr::V4(Ipv4Addr::LOCALHOST), 0));
-        let listener =
-            TcpListener::bind(address).with_context(|| format!("server bind to {address}"))?;
+        let listener = TcpListener::bind(address).with_context(|| format!("bind to {address}"))?;
 
         listener
             .set_nonblocking(true)
@@ -96,35 +85,20 @@ impl Server {
                 shutdown_signal.await.unwrap();
             });
 
-        let join_handle = tokio::spawn(async move {
-            let result = server_task.await.map(|()| ServerShutdownSuccess);
+        let join = tokio::spawn(async move {
+            let result = server_task.await;
             drop(dir);
             result
         });
 
-        Ok(ServerRunning {
+        Ok(Self {
             address,
-            shutdown_effect: ServerShutdown {
-                shutdown_sender,
-                join_handle,
-            },
+            shutdown_sender,
+            join,
         })
     }
-}
 
-#[derive(Debug, derive_more::Display)]
-#[display("shut down server")]
-pub(crate) struct ServerShutdown {
-    shutdown_sender: oneshot::Sender<()>,
-    join_handle: JoinHandle<hyper::Result<ServerShutdownSuccess>>,
-}
-
-#[derive(Debug, derive_more::Display)]
-#[display("server shutdown successfully")]
-pub(crate) struct ServerShutdownSuccess;
-
-impl Effect<ServerShutdownSuccess, anyhow::Error> for ServerShutdown {
-    async fn inner(self) -> anyhow::Result<ServerShutdownSuccess> {
+    pub async fn shutdown(self) -> anyhow::Result<()> {
         self.shutdown_sender.send(()).unwrap();
         self.join_handle
             .await
