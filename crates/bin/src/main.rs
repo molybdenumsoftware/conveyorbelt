@@ -10,15 +10,22 @@ mod server;
 mod signal;
 
 use anyhow::Context;
-use futures::{FutureExt as _, StreamExt, future::select};
+use futures::{
+    FutureExt as _, StreamExt,
+    future::{
+        Either::{Left, Right},
+        join, select,
+    },
+};
+use nix::sys::signal::{Signal::SIGTERM, kill};
 use tokio::select;
 
 use crate::{
+    build::Build,
     cli::Args,
     fswatch::FsWatch,
     git::GitToplevel,
     server::{ServeDir, Server},
-    signal::SignalListener,
 };
 
 #[tokio::main]
@@ -26,70 +33,53 @@ async fn main() -> anyhow::Result<()> {
     logging::init();
     let Args { build_command } = crate::cli::parse();
     let toplevel = GitToplevel::resolve().context("get git toplevel")?;
-    let mut signal = SignalListener::create().context("listen on signals")?;
+    let mut signal = signal::listen().context("listen on signals")?;
     let serve_dir = ServeDir::create()?;
     let fs_watch = FsWatch::init(&toplevel).context("init fs watch")?;
 
     // TODO nix::sys::signal::kill(pid, signal).with_context(|| format!("send {signal} to {pid}"))?;
 
-    let (server, build_spawned) = match select(
+    let (server, build) = match select(
         &mut signal,
         select(
             Box::pin(Server::start(serve_dir.clone())),
-            Box::pin(futures::future::try_join(
-                BuildSpawn {
-                    path: self.build_command_path.clone(),
-                    serve_dir: serve_dir.clone(),
-                }
-                .do_logged(),
-            )),
+            Box::pin(Build::spawn(serve_dir.clone(), build_command)),
         ),
     )
     .await
     {
         Left((_signal, _)) => return Ok(()),
-        Right((Left((Err(_server_spawn), _)), _)) => return Err(1),
-        Right((Left((Ok(server), right)), signal)) => {
-            tokio::select! {
+        Right((Left((Err(server), _)), _)) => return Err(server),
+        Right((Left((Ok(server), build_spawn)), signal)) => {
+            select! {
                 _ = signal => {
-                    server.shutdown_effect.do_logged().await?;
+                    server.shutdown().await?;
                     return Ok(());
                 },
-                result = right => {
-                    // TODO: is build_spawned cancellation safe?
-                    let (fs_watching, build_spawned) = result?;
-                    (server, fs_watching, build_spawned)
-                }
+                    // TODO: is build_spawn cancellation safe?
+                result = build_spawn => (server, result?)
             }
         }
-        Right((Right((Err(_), _)), _)) => return Err(1),
-        Right((Right((Ok((fs_watching, build_spawned)), server_f)), signal)) => {
-            tokio::select! {
+        Right((Right((Err(build_error), _)), _)) => return Err(build_error),
+        Right((Right((Ok(build), server)), signal)) => {
+            select! {
                 _ = signal => return Ok(()),
-                result = server_f => {
-                    let server = result?;
-                    (server, fs_watching, build_spawned)
-                }
+                result = server => (result?, build)
             }
         }
     };
 
-    // Wait until first build succedes.
+    let pid = build.pid()?;
 
-    match select(&mut signal, Box::pin(build_spawned.wait.do_logged())).await {
+    match select(&mut signal, Box::pin(build.wait())).await {
         Left((_signal, build_wait)) => {
-            let build_terminate = BuildSignal {
-                pid: build_spawned.pid,
-                signal: nix::sys::signal::SIGTERM,
-            }
-            .do_logged();
-            let server_shutdown = server.shutdown_effect.do_logged();
-            join3(build_wait, build_terminate, server_shutdown).await;
+            kill(pid, SIGTERM);
+            join(build_wait, server.shutdown()).await;
             return Ok(());
         }
-        Right((Err(_), _)) => {
-            server.shutdown_effect.do_logged().await;
-            return Err(1);
+        Right((Err(e), _)) => {
+            server.shutdown().await;
+            return Err(e);
         }
         Right((Ok(_build_succeeded), _)) => {}
     }

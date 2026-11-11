@@ -11,24 +11,23 @@ pub(crate) enum SignalKind {
     Term,
 }
 
-#[derive(Debug, derive_more::Deref, derive_more::DerefMut)]
-pub(crate) struct SignalListener(BoxFuture<'static, SignalKind>);
+pub fn listen() -> anyhow::Result<BoxFuture<'static, SignalKind>> {
+    debug!("install signal listener");
+    let mut sigint =
+        signal(tokio::signal::unix::SignalKind::interrupt()).context("create sigint listener")?;
+    let mut sigterm =
+        signal(tokio::signal::unix::SignalKind::terminate()).context("create sigterm listener")?;
 
-impl SignalListener {
-    pub fn create() -> anyhow::Result<Self> {
-        debug!("install signal listener");
-        let mut sigint = signal(SignalKind::interrupt()).context("create sigint listener")?;
-        let mut sigterm = signal(SignalKind::terminate()).context("create sigterm listener")?;
-
-        let f = async {
-            select! {
-                _ = sigint.recv() => SignalKind::Int,
-                _ = sigterm.recv() => SignalKind::Term,
-            }
-        }
-        .boxed();
-
-        info!("listening on sigint and sigterm");
-        Ok(SignalListener(f))
+    let f = async move {
+        let kind = select! {
+            _ = sigint.recv() => SignalKind::Int,
+            _ = sigterm.recv() => SignalKind::Term,
+        };
+        info!("received {kind}");
+        kind
     }
+    .boxed();
+
+    info!("listening on sigint and sigterm");
+    Ok(f)
 }

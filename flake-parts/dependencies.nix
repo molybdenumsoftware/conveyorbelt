@@ -39,6 +39,7 @@ in
           "deref_mut"
           "display"
           "from"
+          "from_str"
         ];
         hyper = {
           features = [

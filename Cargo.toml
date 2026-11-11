@@ -18,7 +18,7 @@ version = "*"
 
 [workspace.dependencies.derive_more]
 default-features = false
-features = ["as_ref", "debug", "deref", "deref_mut", "display", "from"]
+features = ["as_ref", "debug", "deref", "deref_mut", "display", "from", "from_str"]
 version = "*"
 
 [workspace.dependencies.futures]

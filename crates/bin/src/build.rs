@@ -26,7 +26,7 @@ pub struct Build {
     stderr_join_handle: task::JoinHandle<()>,
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone, derive_more::FromStr)]
 pub struct BuildCommandPath(PathBuf);
 
 impl Build {

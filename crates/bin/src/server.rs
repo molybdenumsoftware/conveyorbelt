@@ -12,7 +12,7 @@ use static_web_server::{
 };
 use tempfile::TempDir;
 use tokio::{sync::oneshot, task::JoinHandle};
-use tracing::debug;
+use tracing::{debug, info};
 
 #[derive(Clone, Debug, derive_more::Deref, derive_more::Display)]
 #[display("serve dir: {_0:?}")]
@@ -100,9 +100,12 @@ impl Server {
 
     pub async fn shutdown(self) -> anyhow::Result<()> {
         self.shutdown_sender.send(()).unwrap();
-        self.join_handle
+        self.join
             .await
             .context("server task join")?
-            .context("server shut down")
+            .context("server shut down")?;
+
+        info!("server shut down");
+        Ok(())
     }
 }

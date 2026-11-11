@@ -4,6 +4,7 @@ use anyhow::{Context as _, Ok, bail};
 use tracing::info;
 
 #[derive(Debug, Clone, derive_more::AsRef)]
+#[as_ref(forward)]
 pub struct GitToplevel(PathBuf);
 
 impl GitToplevel {
@@ -18,16 +19,18 @@ impl GitToplevel {
             bail!("{command:?} exited with {exit_status}. stderr: {stderr}");
         }
 
-        let git_toplevel = output
+        let var_name: String = output
             .stdout
             .try_into()
-            .with_context(|| format!("{command:?} wrote non-UTF-8 to stdout"))?
+            .with_context(|| format!("{command:?} wrote non-UTF-8 to stdout"))?;
+
+        let git_toplevel = var_name
             .trim_end()
             .to_string()
             .parse()
             .context("parse git_toplevel into `PathBuf`")?;
 
-        info!("git toplevel obtained: {git_toplevel}");
-        Ok(git_toplevel)
+        info!("git toplevel obtained: {git_toplevel:?}");
+        Ok(Self(git_toplevel))
     }
 }
