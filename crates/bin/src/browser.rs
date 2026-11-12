@@ -26,7 +26,7 @@ impl Browser {
         &self.websocket_address
     }
 
-    async fn launch(url: &str) -> anyhow::Result<Self> {
+    pub async fn launch(url: &str) -> anyhow::Result<Self> {
         info!("launching browser");
         let dir = tempdir().context("create data dir")?;
         debug!("browser data dir: {dir:?}");

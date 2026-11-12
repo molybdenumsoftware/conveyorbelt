@@ -21,6 +21,7 @@ use nix::sys::signal::{Signal::SIGTERM, kill};
 use tokio::select;
 
 use crate::{
+    browser::Browser,
     build::Build,
     cli::Args,
     fswatch::FsWatch,
@@ -84,15 +85,8 @@ async fn main() -> anyhow::Result<()> {
         Right((Ok(_build_succeeded), _)) => {}
     }
 
-    // Spawn browser.
-
-    let Ok(browser) = BrowserSpawn {
-        url: format!("http://{}", server.address),
-    }
-    .do_logged()
-    .await
-    else {
-        server.shutdown_effect.do_logged().await;
+    let Ok(browser) = Browser::launch(&server.address()).await else {
+        server.shutdown().await;
         return Err(1);
     };
 

@@ -108,4 +108,8 @@ impl Server {
         info!("server shut down");
         Ok(())
     }
+
+    pub fn address(&self) -> String {
+        format!("http://{}", self.address)
+    }
 }
