@@ -19,11 +19,13 @@ use futures::{
 };
 use nix::sys::signal::{Signal::SIGTERM, kill};
 use tokio::select;
+use tracing::warn;
 
 use crate::{
     browser::Browser,
     build::Build,
     cli::Args,
+    common::{StateForTesting, TESTING_MODE},
     fswatch::FsWatch,
     git::GitToplevel,
     server::{ServeDir, Server},
@@ -79,46 +81,56 @@ async fn main() -> anyhow::Result<()> {
             return Ok(());
         }
         Right((Err(e), _)) => {
-            server.shutdown().await;
+            if let Err(e) = server.shutdown().await {
+                warn!("{e}");
+            }
             return Err(e);
         }
         Right((Ok(_build_succeeded), _)) => {}
     }
 
-    let Ok(browser) = Browser::launch(&server.address()).await else {
-        server.shutdown().await;
-        return Err(1);
+    let browser = match Browser::launch(&server.address()).await {
+        Ok(browser) => browser,
+        Err(e) => {
+            if let Err(e) = server.shutdown().await {
+                warn!("{e}");
+            }
+            return Err(e);
+        }
     };
 
     if std::env::var(TESTING_MODE).is_ok() {
         let state_for_testing = StateForTesting {
             serve_path: serve_dir.path().to_path_buf(),
-            serve_port: server.address.port(),
-            browser_debugging_address: browser.browser.websocket_address().to_string(),
-            browser_pid: browser.browser.pid(),
+            serve_port: server.port(),
+            browser_debugging_address: browser.websocket_address().to_owned(),
+            browser_pid: browser.pid(),
         };
         println!("{state_for_testing}");
     }
 
-    // FS watch
-
     // Instead of sharing memory keep an Option of a task and share browser handle with it
     let mut build = None;
-    while let Some(result) = fs_watching.0.next().await {
-        let event = match result {
+    while let Some(changes) = fs_watch.0.next().await {
+        let changes = match changes {
             Err(e) => {
                 warn!("{e}");
                 continue;
             }
-            Ok(event) => event,
+            Ok(changes) => changes,
         };
-        if event.is_ignored {
+
+        if changes.iter().all(|change| {
+            eprintln!("{change}");
+            change.is_ignored
+        }) {
             continue;
         }
+
         match build {
             None => {
                 let serve_dir_clone = serve_dir.clone();
-                let build_command_path_clone = self.build_command_path.clone();
+                let build_command_path_clone = build_command_path.clone();
                 build = Some(tokio::spawn(async move {
                     let spawn_result = BuildSpawn {
                         path: build_command_path_clone.clone(),

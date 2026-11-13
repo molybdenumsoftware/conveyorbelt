@@ -109,6 +109,10 @@ impl Server {
         Ok(())
     }
 
+    pub fn port(&self) -> u16 {
+        self.address.port()
+    }
+
     pub fn address(&self) -> String {
         format!("http://{}", self.address)
     }
