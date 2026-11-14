@@ -1,14 +1,12 @@
-use std::{convert::Infallible, path::PathBuf, process::Stdio};
+use std::{path::PathBuf, process::Stdio};
 
-use anyhow::{Context, bail};
+use anyhow::Context;
 use futures::FutureExt;
-use nix::{sys::signal::Signal, unistd::Pid};
+use nix::unistd::Pid;
 use tokio::{
     process::{Child, Command},
-    sync::mpsc,
     task,
 };
-use tokio_stream::wrappers::ReceiverStream;
 use tracing::info;
 
 use crate::{

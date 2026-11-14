@@ -1,9 +1,11 @@
-use anyhow::Context as _;
+use std::time::Duration;
+
+use anyhow::{Context as _, anyhow};
 use chromiumoxide::{
     BrowserConfig, Page,
     cdp::browser_protocol::target::{CloseTargetParams, GetTargetsParams},
 };
-use futures::{StreamExt as _, stream};
+use futures::StreamExt as _;
 use tempfile::tempdir;
 use tracing::{debug, info};
 
@@ -41,7 +43,10 @@ impl Browser {
             config = config.launch_timeout(Duration::from_mins(2));
         }
 
-        let config = config.build().context("build config")?;
+        let config = config
+            .build()
+            .map_err(|s| anyhow!("{s}"))
+            .context("build config")?;
 
         debug!("browser config: {config:?}");
 
@@ -80,7 +85,7 @@ impl Browser {
         let websocket_address = browser.websocket_address().clone();
         info!("navigate to {url}");
         let page = browser.new_page(url).await.context("create page")?;
-        Box::new(browser).leak();
+        Box::leak(Box::new(browser));
 
         Ok(Browser {
             pid,
@@ -89,8 +94,9 @@ impl Browser {
         })
     }
 
-    async fn reload_page(self) -> anyhow::Result<()> {
+    pub async fn reload_page(self) -> anyhow::Result<()> {
         info!("reload page");
-        self.handle.page.reload().await.context("reload page")
+        self.page.reload().await.context("reload page")?;
+        Ok(())
     }
 }
