@@ -19,7 +19,7 @@ use futures::{
 };
 use nix::sys::signal::{Signal::SIGTERM, kill};
 use tokio::select;
-use tracing::warn;
+use tracing::{info, warn};
 
 use crate::{
     browser::Browser,
@@ -110,9 +110,9 @@ async fn main() -> anyhow::Result<()> {
     }
 
     // Instead of sharing memory keep an Option of a task and share browser handle with it
-    let mut build = None;
-    while let Some(changes) = fs_watch.0.next().await {
-        let changes = match changes {
+    let mut task = None;
+    loop {
+        let changes = match fs_watch.recv().await {
             Err(e) => {
                 warn!("{e}");
                 continue;
@@ -120,39 +120,25 @@ async fn main() -> anyhow::Result<()> {
             Ok(changes) => changes,
         };
 
-        if changes.iter().all(|change| {
-            eprintln!("{change}");
-            change.is_ignored
-        }) {
+        let all_ignored = true;
+        for change in &changes {
+            info!("{change}");
+            all_ignored = all_ignored && change.is_ignored;
+        }
+
+        if all_ignored {
             continue;
         }
 
-        match build {
+        match task.take() {
             None => {
-                let serve_dir_clone = serve_dir.clone();
-                let build_command_path_clone = build_command_path.clone();
-                build = Some(tokio::spawn(async move {
-                    let spawn_result = BuildSpawn {
-                        path: build_command_path_clone.clone(),
-                        serve_dir: serve_dir_clone.clone(),
-                    }
-                    .do_logged()
-                    .await;
+                let build = Build::spawn(serve_dir.clone(), build_command.clone());
+                task = Some(tokio::spawn(async move {
+                    let spawn = build.await.context("spawn build")?;
 
-                    let spawn = match spawn_result {
-                        Err(e) => {
-                            warn!("{e}");
-                            return;
-                        }
-                        Ok(build) => build,
-                    };
+                    let code = spawn.wait().await.context("wait build")?;
 
-                    let wait_result = spawn.wait.do_logged().await;
-
-                    if let Err(e) = wait_result {
-                        warn!("{e}");
-                        return;
-                    }
+                    Ok(code)
                 }));
             }
             Some(_) => todo!(),

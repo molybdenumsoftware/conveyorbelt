@@ -1,8 +1,9 @@
 use anyhow::{Context, Ok};
+use futures::StreamExt;
 use git2::Repository;
 use notify::{RecursiveMode, Watcher as _};
-use tokio::sync::mpsc;
-use tokio_stream::wrappers::ReceiverStream;
+use tokio::sync::mpsc::{self, Receiver};
+use tokio_stream::{Stream, wrappers::ReceiverStream};
 
 use std::path::{Path, PathBuf};
 
@@ -65,7 +66,7 @@ pub(crate) enum FsChangeKind {
 }
 
 #[derive(Debug)]
-pub(crate) struct FsWatch(pub ReceiverStream<anyhow::Result<Vec<FsChange>>>);
+pub(crate) struct FsWatch(Receiver<anyhow::Result<Vec<FsChange>>>);
 
 impl FsWatch {
     pub fn init(path: impl AsRef<Path>) -> anyhow::Result<Self> {
@@ -118,6 +119,10 @@ impl FsWatch {
             .watch(path.as_ref(), RecursiveMode::Recursive)
             .context("begin watching")?;
 
-        Ok(FsWatch(ReceiverStream::new(event_receiver)))
+        Ok(FsWatch(event_receiver))
+    }
+
+    pub async fn recv(&mut self) -> anyhow::Result<Vec<FsChange>> {
+        self.0.recv().await.unwrap()
     }
 }

@@ -45,7 +45,7 @@ impl Build {
             .stderr(Stdio::piped());
 
         info!("spawn build {command:?}");
-        let mut child = command.spawn().context("build spawn")?;
+        let mut child = command.spawn().context("spawn command")?;
 
         let stdout_join_handle = child.for_stdout_line(move |line| {
             eprintln!("stdout: {line}");
