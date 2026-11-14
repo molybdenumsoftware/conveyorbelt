@@ -55,6 +55,7 @@ in
         replace_with.features = [ "std" ];
         tokio.features = [
           "io-util"
+          "macros"
           "process"
         ];
         tracing-subscriber.features = [ "env-filter" ];

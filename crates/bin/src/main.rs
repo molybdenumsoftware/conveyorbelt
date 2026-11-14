@@ -150,7 +150,9 @@ async fn main() -> anyhow::Result<()> {
             }
             Some(_) => {
                 //
+                break;
             }
         }
     }
+    Ok(())
 }

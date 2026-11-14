@@ -87,7 +87,7 @@ version = "*"
 
 [workspace.dependencies.tokio]
 default-features = false
-features = ["io-util", "process"]
+features = ["io-util", "macros", "process"]
 version = "*"
 
 [workspace.dependencies.tokio-stream]
