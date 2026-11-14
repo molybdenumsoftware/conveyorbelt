@@ -10,15 +10,12 @@ mod server;
 mod signal;
 
 use anyhow::Context;
-use futures::{
-    FutureExt as _, StreamExt,
-    future::{
-        Either::{Left, Right},
-        join, select,
-    },
+use futures::future::{
+    Either::{Left, Right},
+    join, select,
 };
 use nix::sys::signal::{Signal::SIGTERM, kill};
-use tokio::select;
+use tokio::{select, task::JoinHandle};
 use tracing::{info, warn};
 
 use crate::{
@@ -38,7 +35,7 @@ async fn main() -> anyhow::Result<()> {
     let toplevel = GitToplevel::resolve().context("get git toplevel")?;
     let mut signal = signal::listen().context("listen on signals")?;
     let serve_dir = ServeDir::create()?;
-    let fs_watch = FsWatch::init(&toplevel).context("init fs watch")?;
+    let mut fs_watch = FsWatch::init(&toplevel).context("init fs watch")?;
 
     // TODO nix::sys::signal::kill(pid, signal).with_context(|| format!("send {signal} to {pid}"))?;
 
@@ -46,7 +43,7 @@ async fn main() -> anyhow::Result<()> {
         &mut signal,
         select(
             Box::pin(Server::start(serve_dir.clone())),
-            Box::pin(Build::spawn(serve_dir.clone(), build_command)),
+            Box::pin(Build::spawn(serve_dir.clone(), build_command.clone())),
         ),
     )
     .await
@@ -110,7 +107,7 @@ async fn main() -> anyhow::Result<()> {
     }
 
     // Instead of sharing memory keep an Option of a task and share browser handle with it
-    let mut task = None;
+    let mut task: Option<JoinHandle<anyhow::Result<Option<i32>>>> = None;
     loop {
         let changes = match fs_watch.recv().await {
             Err(e) => {
@@ -120,7 +117,7 @@ async fn main() -> anyhow::Result<()> {
             Ok(changes) => changes,
         };
 
-        let all_ignored = true;
+        let mut all_ignored = true;
         for change in &changes {
             info!("{change}");
             all_ignored = all_ignored && change.is_ignored;
@@ -135,16 +132,13 @@ async fn main() -> anyhow::Result<()> {
                 let build = Build::spawn(serve_dir.clone(), build_command.clone());
                 task = Some(tokio::spawn(async move {
                     let spawn = build.await.context("spawn build")?;
-
                     let code = spawn.wait().await.context("wait build")?;
-
                     Ok(code)
                 }));
             }
-            Some(_) => todo!(),
+            Some(_) => {
+                //
+            }
         }
     }
-
-    signal.await;
-    Ok(())
 }
