@@ -322,7 +322,6 @@ fn sigterm() {
     subject
         .wait_stderr_contains("event: signal: received: SIGTERM")
         .unwrap();
-    panic!("testing");
 
     subject.wait_stderr_contains("exit: 0").unwrap();
     let status = subject.wait().unwrap();

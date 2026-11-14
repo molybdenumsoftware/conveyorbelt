@@ -71,10 +71,23 @@ async fn main() -> anyhow::Result<()> {
 
     let pid = build.pid()?;
 
-    match select(&mut signal, Box::pin(build.wait())).await {
+    match select(
+        &mut signal,
+        Box::pin(async move { build.wait().await.context("wait build") }),
+    )
+    .await
+    {
         Left((_signal, build_wait)) => {
-            kill(pid, SIGTERM);
-            join(build_wait, server.shutdown()).await;
+            if let Err(e) = kill(pid, SIGTERM).context("terminate build") {
+                warn!("{e}");
+            };
+            let (build, server) = join(build_wait, server.shutdown()).await;
+            if let Err(e) = build {
+                warn!("{e}");
+            }
+            if let Err(e) = server {
+                warn!("{e}");
+            }
             return Ok(());
         }
         Right((Err(e), _)) => {

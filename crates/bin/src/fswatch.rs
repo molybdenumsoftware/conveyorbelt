@@ -1,9 +1,7 @@
 use anyhow::{Context, Ok};
-use futures::StreamExt;
 use git2::Repository;
 use notify::{RecursiveMode, Watcher as _};
 use tokio::sync::mpsc::{self, Receiver};
-use tokio_stream::{Stream, wrappers::ReceiverStream};
 
 use std::path::{Path, PathBuf};
 

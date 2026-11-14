@@ -104,6 +104,4 @@ in
           workspace = true;
         });
   };
-
-  perSystem.buildEnv.RUSTFLAGS = "--cfg tokio_unstable";
 }

@@ -75,7 +75,7 @@ impl Build {
             .with_context(|| format!("wait on {child:?}"))?
             .code();
 
-        tokio::join!(stdout_join_handle, stderr_join_handle);
+        tokio::try_join!(stdout_join_handle, stderr_join_handle).context("join output tasks")?;
 
         Ok(code)
     }
