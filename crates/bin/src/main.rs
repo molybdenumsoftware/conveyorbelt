@@ -10,9 +10,12 @@ mod server;
 mod signal;
 
 use anyhow::Context;
-use futures::future::{
-    Either::{Left, Right},
-    join, select,
+use futures::{
+    FutureExt,
+    future::{
+        Either::{Left, Right},
+        join, select,
+    },
 };
 use nix::sys::signal::{Signal::SIGTERM, kill};
 use tokio::{select, task::JoinHandle};
@@ -139,7 +142,7 @@ async fn main() -> anyhow::Result<()> {
             continue;
         }
 
-        match task.take() {
+        let wait_result = match task.as_mut() {
             None => {
                 let build = Build::spawn(serve_dir.clone(), build_command.clone());
                 task = Some(tokio::spawn(async move {
@@ -147,12 +150,32 @@ async fn main() -> anyhow::Result<()> {
                     let code = spawn.wait().await.context("wait build")?;
                     Ok(code)
                 }));
+                continue;
             }
-            Some(_) => {
-                //
-                break;
+            Some(task) if !task.is_finished() => {
+                info!("build in progress");
+                continue;
+            }
+            Some(task) => task.await.context("join build task handle")?,
+        };
+
+        match wait_result {
+            Err(e) => {
+                warn!("{e}");
+                continue;
+            }
+            Ok(None) => {
+                continue;
+            }
+            Ok(Some(0)) => {}
+            Ok(Some(code)) => {
+                warn!("build exit with {code}");
+                continue;
             }
         }
+
+        info!("build success");
+
+        browser.reload_page().await.context("reload page");
     }
-    Ok(())
 }
