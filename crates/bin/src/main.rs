@@ -106,7 +106,6 @@ async fn main() -> anyhow::Result<()> {
         println!("{state_for_testing}");
     }
 
-    // Instead of sharing memory keep an Option of a task and share browser handle with it
     let mut task: Option<JoinHandle<anyhow::Result<Option<i32>>>> = None;
     loop {
         let changes = match fs_watch.recv().await {

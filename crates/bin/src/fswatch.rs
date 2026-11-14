@@ -73,44 +73,45 @@ impl FsWatch {
         let repository = Repository::open_from_env().context("open git repo")?;
         let (event_sender, event_receiver) = mpsc::channel(1);
 
-        let event_handler = move |result| -> anyhow::Result<Vec<FsChange>> {
-            let event = result.context("fs watch error")?;
-            let changes = Vec::new();
+        let event_handler =
+            move |result: notify::Result<notify::Event>| -> anyhow::Result<Vec<FsChange>> {
+                let event = result.context("fs watch error")?;
+                let mut changes = Vec::new();
 
-            let kind = match event.kind {
-                notify::EventKind::Create(kind) => FsChangeKind::Create(kind),
-                notify::EventKind::Modify(notify::event::ModifyKind::Any) => {
-                    FsChangeKind::Modify(ModifyKind::Any)
+                let kind = match event.kind {
+                    notify::EventKind::Create(kind) => FsChangeKind::Create(kind),
+                    notify::EventKind::Modify(notify::event::ModifyKind::Any) => {
+                        FsChangeKind::Modify(ModifyKind::Any)
+                    }
+                    notify::EventKind::Modify(notify::event::ModifyKind::Other) => {
+                        FsChangeKind::Modify(ModifyKind::Other)
+                    }
+                    notify::EventKind::Modify(notify::event::ModifyKind::Data(change)) => {
+                        FsChangeKind::Modify(ModifyKind::Data(change))
+                    }
+                    notify::EventKind::Modify(notify::event::ModifyKind::Name(rename)) => {
+                        FsChangeKind::Modify(ModifyKind::Name(rename))
+                    }
+                    notify::EventKind::Remove(kind) => FsChangeKind::Remove(kind),
+                    _ => return Ok(changes),
+                };
+
+                for path in event.paths {
+                    let is_ignored = repository
+                        .is_path_ignored(&path)
+                        .context("ask wether path is ignored")?;
+
+                    changes.push(FsChange {
+                        path,
+                        kind,
+                        is_ignored,
+                    });
                 }
-                notify::EventKind::Modify(notify::event::ModifyKind::Other) => {
-                    FsChangeKind::Modify(ModifyKind::Other)
-                }
-                notify::EventKind::Modify(notify::event::ModifyKind::Data(change)) => {
-                    FsChangeKind::Modify(ModifyKind::Data(change))
-                }
-                notify::EventKind::Modify(notify::event::ModifyKind::Name(rename)) => {
-                    FsChangeKind::Modify(ModifyKind::Name(rename))
-                }
-                notify::EventKind::Remove(kind) => FsChangeKind::Remove(kind),
-                _ => return Ok(changes),
+
+                Ok(changes)
             };
 
-            for path in event.paths {
-                let is_ignored = repository
-                    .is_path_ignored(&path)
-                    .context("ask wether path is ignored")?;
-
-                changes.push(FsChange {
-                    path,
-                    kind,
-                    is_ignored,
-                });
-            }
-
-            Ok(changes)
-        };
-
-        let mut watcher = notify::recommended_watcher(|event| {
+        let mut watcher = notify::recommended_watcher(move |event| {
             event_sender.blocking_send(event_handler(event)).unwrap();
         })
         .context("create watcher")?;
