@@ -122,7 +122,7 @@ async fn main() -> anyhow::Result<()> {
         println!("{state_for_testing}");
     }
 
-    let mut task: Option<JoinHandle<anyhow::Result<Option<i32>>>> = None;
+    let mut task: Option<JoinHandle<anyhow::Result<()>>> = None;
     loop {
         let changes = match fs_watch.recv().await {
             Err(e) => {
@@ -142,13 +142,13 @@ async fn main() -> anyhow::Result<()> {
             continue;
         }
 
-        let wait_result = match task.as_mut() {
+        match task.as_mut() {
             None => {
                 let build = Build::spawn(serve_dir.clone(), build_command.clone());
                 task = Some(tokio::spawn(async move {
                     let spawn = build.await.context("spawn build")?;
                     let code = spawn.wait().await.context("wait build")?;
-                    Ok(code)
+                    Ok(())
                 }));
                 continue;
             }
@@ -156,26 +156,9 @@ async fn main() -> anyhow::Result<()> {
                 info!("build in progress");
                 continue;
             }
-            Some(task) => task.await.context("join build task handle")?,
+            Some(task) => {
+                task.await.context("join build task handle")?;
+            }
         };
-
-        match wait_result {
-            Err(e) => {
-                warn!("{e}");
-                continue;
-            }
-            Ok(None) => {
-                continue;
-            }
-            Ok(Some(0)) => {}
-            Ok(Some(code)) => {
-                warn!("build exit with {code}");
-                continue;
-            }
-        }
-
-        info!("build success");
-
-        browser.reload_page().await.context("reload page");
     }
 }
