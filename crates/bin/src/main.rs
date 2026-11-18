@@ -144,7 +144,17 @@ async fn main() -> anyhow::Result<()> {
 
         match task.as_mut() {
             None => {
-                let build = Build::spawn(serve_dir.clone(), build_command.clone());
+                let build = match Build::spawn(serve_dir.clone(), build_command.clone())
+                    .await
+                    .context("spawn build")
+                {
+                    Ok(build) => build,
+                    Err(e) => {
+                        warn!("{e}");
+                        continue;
+                    }
+                };
+
                 task = Some(tokio::spawn(async move {
                     let spawn = build.await.context("spawn build")?;
                     let code = spawn.wait().await.context("wait build")?;
@@ -152,11 +162,17 @@ async fn main() -> anyhow::Result<()> {
                     Ok(())
                 }));
             }
-            Some(task) if !task.is_finished() => {
-                info!("build in progress");
-                if let Err(e) = kill(pid, SIGTERM).context("terminate build") {
+            Some(handle) if !handle.is_finished() => {
+                info!("build in progress, sending SIGTERM");
+                if let Err(e) = kill(pid, SIGTERM).context("SIGTERM build") {
                     warn!("{e}");
                 };
+                task = Some(tokio::spawn(async move {
+                    let spawn = build.await.context("spawn build")?;
+                    let code = spawn.wait().await.context("wait build")?;
+                    // TODO: reload the browser page if code is 0
+                    Ok(())
+                }));
                 //
                 //
                 // TODO: queue new build
