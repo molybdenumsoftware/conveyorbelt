@@ -158,16 +158,8 @@ async fn main() -> anyhow::Result<()> {
                     }
                 };
 
-                let pid = match build.pid() {
-                    Ok(p) => p,
-                    Err(e) => {
-                        warn!("{e}");
-                        continue;
-                    }
-                };
-
                 task = Some((
-                    pid,
+                    build.pid,
                     tokio::spawn(async move {
                         let code = build.wait().await.context("wait build")?;
                         // TODO: reload the browser page if code is 0
@@ -175,17 +167,20 @@ async fn main() -> anyhow::Result<()> {
                     }),
                 ));
             }
-            Some(handle) if !handle.is_finished() => {
+            Some((pid, handle)) if !handle.is_finished() => {
                 info!("build in progress, sending SIGTERM");
-                if let Err(e) = kill(pid, SIGTERM).context("SIGTERM build") {
+                if let Err(e) = kill(*pid, SIGTERM).context("SIGTERM build") {
                     warn!("{e}");
                 };
-                task = Some(tokio::spawn(async move {
-                    let spawn = build.await.context("spawn build")?;
-                    let code = spawn.wait().await.context("wait build")?;
-                    // TODO: reload the browser page if code is 0
-                    Ok(())
-                }));
+                task = Some(
+                    pid,
+                    tokio::spawn(async move {
+                        let spawn = build.await.context("spawn build")?;
+                        let code = spawn.wait().await.context("wait build")?;
+                        // TODO: reload the browser page if code is 0
+                        Ok(())
+                    }),
+                );
                 //
                 //
                 // TODO: queue new build
@@ -196,3 +191,31 @@ async fn main() -> anyhow::Result<()> {
         };
     }
 }
+
+/*
+
+
+buildstate::start
+|
+v
+browser page reload
+
+
+buildstate
+- nothing (not started yet)
+- building
+- stopping
+
+
+
+        start v
+nothing ->  building -> nothing  + send reload
+
+
+
+
+      start v         start v    start v
+nothing ->  building -> stopping -> building -> nothing + send reload
+
+
+*/

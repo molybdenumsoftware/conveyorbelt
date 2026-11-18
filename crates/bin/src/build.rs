@@ -66,6 +66,7 @@ impl Build {
             mut child,
             stdout_join_handle,
             stderr_join_handle,
+            ..
         } = self;
 
         let code = child
