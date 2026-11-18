@@ -17,7 +17,10 @@ use futures::{
         join, select,
     },
 };
-use nix::sys::signal::{Signal::SIGTERM, kill};
+use nix::{
+    sys::signal::{Signal::SIGTERM, kill},
+    unistd::Pid,
+};
 use tokio::{select, task::JoinHandle};
 use tracing::{info, warn};
 
@@ -122,7 +125,7 @@ async fn main() -> anyhow::Result<()> {
         println!("{state_for_testing}");
     }
 
-    let mut task: Option<JoinHandle<anyhow::Result<()>>> = None;
+    let mut task: Option<(Pid, JoinHandle<anyhow::Result<()>>)> = None;
     loop {
         let changes = match fs_watch.recv().await {
             Err(e) => {
@@ -155,12 +158,22 @@ async fn main() -> anyhow::Result<()> {
                     }
                 };
 
-                task = Some(tokio::spawn(async move {
-                    let spawn = build.await.context("spawn build")?;
-                    let code = spawn.wait().await.context("wait build")?;
-                    // TODO: reload the browser page if code is 0
-                    Ok(())
-                }));
+                let pid = match build.pid() {
+                    Ok(p) => p,
+                    Err(e) => {
+                        warn!("{e}");
+                        continue;
+                    }
+                };
+
+                task = Some((
+                    pid,
+                    tokio::spawn(async move {
+                        let code = build.wait().await.context("wait build")?;
+                        // TODO: reload the browser page if code is 0
+                        Ok(())
+                    }),
+                ));
             }
             Some(handle) if !handle.is_finished() => {
                 info!("build in progress, sending SIGTERM");
