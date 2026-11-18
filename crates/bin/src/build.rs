@@ -20,6 +20,7 @@ use crate::{
 #[derive(Debug)]
 pub struct Build {
     child: Child,
+    pub pid: Pid,
     stdout_join_handle: task::JoinHandle<()>,
     stderr_join_handle: task::JoinHandle<()>,
 }
@@ -28,12 +29,6 @@ pub struct Build {
 pub struct BuildCommandPath(PathBuf);
 
 impl Build {
-    pub fn pid(&self) -> anyhow::Result<Pid> {
-        Ok(Pid::from_raw(
-            self.child.id().context("get build pid")? as i32
-        ))
-    }
-
     pub async fn spawn(serve_dir: ServeDir, command: BuildCommandPath) -> anyhow::Result<Self> {
         let mut command = Command::new(command.0);
 
@@ -44,6 +39,7 @@ impl Build {
 
         info!("spawn build {command:?}");
         let mut child = command.spawn().context("spawn command")?;
+        let pid = Pid::from_raw(child.id().context("get id")? as i32);
 
         let stdout_join_handle = child.for_stdout_line(move |line| {
             eprintln!("stdout: {line}");
@@ -55,8 +51,11 @@ impl Build {
             async {}.boxed()
         });
 
+        info!("spawned build {pid}");
+
         Ok(Self {
             child,
+            pid,
             stdout_join_handle,
             stderr_join_handle,
         })
