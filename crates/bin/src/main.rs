@@ -21,7 +21,7 @@ use nix::{
     sys::signal::{Signal::SIGTERM, kill},
     unistd::Pid,
 };
-use tokio::{select, task::JoinHandle};
+use tokio::{select, sync::mpsc, task::JoinHandle};
 use tracing::{info, warn};
 
 use crate::{
@@ -75,8 +75,6 @@ async fn main() -> anyhow::Result<()> {
         }
     };
 
-    let pid = build.pid()?;
-
     match select(
         &mut signal,
         Box::pin(async move { build.wait().await.context("wait build") }),
@@ -84,7 +82,7 @@ async fn main() -> anyhow::Result<()> {
     .await
     {
         Left((_signal, build_wait)) => {
-            if let Err(e) = kill(pid, SIGTERM).context("terminate build") {
+            if let Err(e) = kill(build.pid, SIGTERM).context("terminate build") {
                 warn!("{e}");
             };
             let (build, server) = join(build_wait, server.shutdown()).await;
@@ -125,7 +123,7 @@ async fn main() -> anyhow::Result<()> {
         println!("{state_for_testing}");
     }
 
-    let mut task: Option<(Pid, JoinHandle<anyhow::Result<()>>)> = None;
+    // let mut task: Option<(Pid, JoinHandle<anyhow::Result<()>>)> = None;
     loop {
         let changes = match fs_watch.recv().await {
             Err(e) => {
@@ -145,19 +143,28 @@ async fn main() -> anyhow::Result<()> {
             continue;
         }
 
+        let build = match Build::spawn(serve_dir.clone(), build_command.clone())
+            .await
+            .context("spawn build")
+        {
+            Ok(build) => build,
+            Err(e) => {
+                warn!("{e}");
+                continue;
+            }
+        };
+
+        match select(Box::pin(fs_watch.recv()), Box::pin(build.wait())).await {
+            Left((changes, build)) => {
+                //
+            }
+            Right((build, changes)) => {
+                //
+            }
+        }
+
         match task.as_mut() {
             None => {
-                let build = match Build::spawn(serve_dir.clone(), build_command.clone())
-                    .await
-                    .context("spawn build")
-                {
-                    Ok(build) => build,
-                    Err(e) => {
-                        warn!("{e}");
-                        continue;
-                    }
-                };
-
                 task = Some((
                     build.pid,
                     tokio::spawn(async move {
