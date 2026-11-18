@@ -148,13 +148,18 @@ async fn main() -> anyhow::Result<()> {
                 task = Some(tokio::spawn(async move {
                     let spawn = build.await.context("spawn build")?;
                     let code = spawn.wait().await.context("wait build")?;
+                    // TODO: reload the browser page if code is 0
                     Ok(())
                 }));
-                continue;
             }
             Some(task) if !task.is_finished() => {
                 info!("build in progress");
-                continue;
+                if let Err(e) = kill(pid, SIGTERM).context("terminate build") {
+                    warn!("{e}");
+                };
+                //
+                //
+                // TODO: queue new build
             }
             Some(task) => {
                 task.await.context("join build task handle")?;
