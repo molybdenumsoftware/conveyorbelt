@@ -1,7 +1,8 @@
-use anyhow::{Context, Ok};
+use anyhow::Context;
 use git2::Repository;
 use notify::{RecursiveMode, Watcher as _};
 use tokio::sync::mpsc::{self, Receiver};
+use tracing::{info, warn};
 
 use std::path::{Path, PathBuf};
 
@@ -121,7 +122,26 @@ impl FsWatch {
         Ok(FsWatch(event_receiver))
     }
 
-    pub async fn recv(&mut self) -> anyhow::Result<Vec<FsChange>> {
-        self.0.recv().await.unwrap()
+    pub async fn recv(&mut self) {
+        loop {
+            let changes = match self.0.recv().await.unwrap() {
+                Err(e) => {
+                    warn!("{e}");
+                    continue;
+                }
+                Ok(changes) => changes,
+            };
+
+            let mut all_ignored = true;
+            for change in &changes {
+                info!("{change}");
+                all_ignored = all_ignored && change.is_ignored;
+            }
+
+            if all_ignored {
+                continue;
+            }
+            break;
+        }
     }
 }

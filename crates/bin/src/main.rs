@@ -75,6 +75,7 @@ async fn main() -> anyhow::Result<()> {
         }
     };
 
+    let pid = build.pid;
     match select(
         &mut signal,
         Box::pin(async move { build.wait().await.context("wait build") }),
@@ -82,7 +83,7 @@ async fn main() -> anyhow::Result<()> {
     .await
     {
         Left((_signal, build_wait)) => {
-            if let Err(e) = kill(build.pid, SIGTERM).context("terminate build") {
+            if let Err(e) = kill(pid, SIGTERM).context("terminate build") {
                 warn!("{e}");
             };
             let (build, server) = join(build_wait, server.shutdown()).await;
@@ -123,27 +124,10 @@ async fn main() -> anyhow::Result<()> {
         println!("{state_for_testing}");
     }
 
-    // let mut task: Option<(Pid, JoinHandle<anyhow::Result<()>>)> = None;
     loop {
-        let changes = match fs_watch.recv().await {
-            Err(e) => {
-                warn!("{e}");
-                continue;
-            }
-            Ok(changes) => changes,
-        };
+        fs_watch.recv().await;
 
-        let mut all_ignored = true;
-        for change in &changes {
-            info!("{change}");
-            all_ignored = all_ignored && change.is_ignored;
-        }
-
-        if all_ignored {
-            continue;
-        }
-
-        let build = match Build::spawn(serve_dir.clone(), build_command.clone())
+        let mut build = match Build::spawn(serve_dir.clone(), build_command.clone())
             .await
             .context("spawn build")
         {
@@ -154,48 +138,42 @@ async fn main() -> anyhow::Result<()> {
             }
         };
 
-        match select(Box::pin(fs_watch.recv()), Box::pin(build.wait())).await {
-            Left((changes, build)) => {
-                //
-            }
-            Right((build, changes)) => {
-                //
+        let mut killing_it = false;
+        let mut pid = build.pid;
+        loop {
+            let mut build_done = Box::pin(build.wait());
+            match select(Box::pin(fs_watch.recv()), &mut build_done).await {
+                Left(_) => {
+                    if killing_it {
+                        info!("build in progress, sending SIGTERM");
+                        if let Err(e) = kill(pid, SIGTERM).context("SIGTERM build") {
+                            warn!("{e}");
+                        };
+                        killing_it = true;
+                    } else {
+                        info!("build already terminating");
+                    };
+                }
+                Right(_) => {
+                    if killing_it {
+                        build = match Build::spawn(serve_dir.clone(), build_command.clone())
+                            .await
+                            .context("spawn build")
+                        {
+                            Ok(build) => build,
+                            Err(e) => {
+                                warn!("{e}");
+                                break;
+                            }
+                        };
+                        pid = build.pid;
+                    } else {
+                        // TODO: reload the browser page if code is 0
+                        break;
+                    }
+                }
             }
         }
-
-        match task.as_mut() {
-            None => {
-                task = Some((
-                    build.pid,
-                    tokio::spawn(async move {
-                        let code = build.wait().await.context("wait build")?;
-                        // TODO: reload the browser page if code is 0
-                        Ok(())
-                    }),
-                ));
-            }
-            Some((pid, handle)) if !handle.is_finished() => {
-                info!("build in progress, sending SIGTERM");
-                if let Err(e) = kill(*pid, SIGTERM).context("SIGTERM build") {
-                    warn!("{e}");
-                };
-                task = Some(
-                    pid,
-                    tokio::spawn(async move {
-                        let spawn = build.await.context("spawn build")?;
-                        let code = spawn.wait().await.context("wait build")?;
-                        // TODO: reload the browser page if code is 0
-                        Ok(())
-                    }),
-                );
-                //
-                //
-                // TODO: queue new build
-            }
-            Some(task) => {
-                task.await.context("join build task handle")?;
-            }
-        };
     }
 }
 
