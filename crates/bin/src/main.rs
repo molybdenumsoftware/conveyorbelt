@@ -38,13 +38,22 @@ use crate::{
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
     logging::init();
+    let signal = signal::listen().context("listen on signals")?;
+
+    match select(signal, Box::pin(main_loop())).await {
+        Left((signal, _)) => {
+            info!("caught {signal}");
+            Ok(())
+        }
+        Right((result, _)) => result,
+    }
+}
+
+async fn main_loop() -> anyhow::Result<()> {
     let Args { build_command } = crate::cli::parse();
     let toplevel = GitToplevel::resolve().context("get git toplevel")?;
-    let mut signal = signal::listen().context("listen on signals")?;
     let serve_dir = ServeDir::create()?;
     let mut fs_watch = FsWatch::init(&toplevel).context("init fs watch")?;
-
-    // TODO nix::sys::signal::kill(pid, signal).with_context(|| format!("send {signal} to {pid}"))?;
 
     let server = Server::start(serve_dir.clone())
         .await
@@ -63,11 +72,6 @@ async fn main() -> anyhow::Result<()> {
         };
         println!("{state_for_testing}");
     }
-
-    let build = Build::spawn(serve_dir.clone(), build_command.clone())
-        .await
-        .context("spawn build")?;
-
     enum State {
         Idle,
         Building(Pid, JoinHandle<anyhow::Result<Option<i32>>>),
@@ -76,11 +80,14 @@ async fn main() -> anyhow::Result<()> {
     }
     use State::*;
 
+    let build = Build::spawn(serve_dir.clone(), build_command.clone())
+        .await
+        .context("spawn build")?;
+
     let mut state = State::Building(
         build.pid,
         tokio::spawn(async move { build.wait().await.context("wait build") }),
     );
-
     loop {
         state = match state {
             Idle => {
