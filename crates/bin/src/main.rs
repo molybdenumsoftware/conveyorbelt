@@ -9,19 +9,22 @@ mod logging;
 mod server;
 mod signal;
 
+use std::pin::Pin;
+
 use anyhow::Context;
 use futures::{
     FutureExt,
     future::{
+        BoxFuture,
         Either::{Left, Right},
-        join, select,
+        LocalBoxFuture, select,
     },
 };
 use nix::{
     sys::signal::{Signal::SIGTERM, kill},
     unistd::Pid,
 };
-use tokio::{select, sync::mpsc, task::JoinHandle};
+use tokio::task::JoinHandle;
 use tracing::{info, warn};
 
 use crate::{
@@ -45,74 +48,13 @@ async fn main() -> anyhow::Result<()> {
 
     // TODO nix::sys::signal::kill(pid, signal).with_context(|| format!("send {signal} to {pid}"))?;
 
-    let (server, build) = match select(
-        &mut signal,
-        select(
-            Box::pin(Server::start(serve_dir.clone())),
-            Box::pin(Build::spawn(serve_dir.clone(), build_command.clone())),
-        ),
-    )
-    .await
-    {
-        Left((_signal, _)) => return Ok(()),
-        Right((Left((Err(server), _)), _)) => return Err(server),
-        Right((Left((Ok(server), build_spawn)), signal)) => {
-            select! {
-                _ = signal => {
-                    server.shutdown().await?;
-                    return Ok(());
-                },
-                    // TODO: is build_spawn cancellation safe?
-                result = build_spawn => (server, result?)
-            }
-        }
-        Right((Right((Err(build_error), _)), _)) => return Err(build_error),
-        Right((Right((Ok(build), server)), signal)) => {
-            select! {
-                _ = signal => return Ok(()),
-                result = server => (result?, build)
-            }
-        }
-    };
+    let server = Server::start(serve_dir.clone())
+        .await
+        .context("start server")?;
 
-    let pid = build.pid;
-    match select(
-        &mut signal,
-        Box::pin(async move { build.wait().await.context("wait build") }),
-    )
-    .await
-    {
-        Left((_signal, build_wait)) => {
-            if let Err(e) = kill(pid, SIGTERM).context("terminate build") {
-                warn!("{e}");
-            };
-            let (build, server) = join(build_wait, server.shutdown()).await;
-            if let Err(e) = build {
-                warn!("{e}");
-            }
-            if let Err(e) = server {
-                warn!("{e}");
-            }
-            return Ok(());
-        }
-        Right((Err(e), _)) => {
-            if let Err(e) = server.shutdown().await {
-                warn!("{e}");
-            }
-            return Err(e);
-        }
-        Right((Ok(_build_succeeded), _)) => {}
-    }
-
-    let browser = match Browser::launch(&server.address()).await {
-        Ok(browser) => browser,
-        Err(e) => {
-            if let Err(e) = server.shutdown().await {
-                warn!("{e}");
-            }
-            return Err(e);
-        }
-    };
+    let mut browser = Browser::launch(&server.address())
+        .await
+        .context("launch browser")?;
 
     if std::env::var(TESTING_MODE).is_ok() {
         let state_for_testing = StateForTesting {
@@ -124,83 +66,73 @@ async fn main() -> anyhow::Result<()> {
         println!("{state_for_testing}");
     }
 
+    let build = Build::spawn(serve_dir.clone(), build_command.clone())
+        .await
+        .context("spawn build")?;
+
+    enum State {
+        Idle,
+        Building(Pid, JoinHandle<anyhow::Result<Option<i32>>>),
+        //Terminating(Pin<Box<dyn Future<Output = anyhow::Result<anyhow::Result<Option<i32>>>>>>),
+        Terminating(BoxFuture<'static, anyhow::Result<anyhow::Result<Option<i32>>>>),
+    }
+    use State::*;
+
+    let mut state = State::Building(
+        build.pid,
+        tokio::spawn(async move { build.wait().await.context("wait build") }),
+    );
+
     loop {
-        fs_watch.recv().await;
+        state = match state {
+            Idle => {
+                fs_watch.recv().await;
+                let build = Build::spawn(serve_dir.clone(), build_command.clone())
+                    .await
+                    .context("build spawn")?;
 
-        let mut build = match Build::spawn(serve_dir.clone(), build_command.clone())
-            .await
-            .context("spawn build")
-        {
-            Ok(build) => build,
-            Err(e) => {
-                warn!("{e}");
-                continue;
+                Building(
+                    build.pid,
+                    tokio::spawn(async move { build.wait().await.context("build wait") }),
+                )
             }
-        };
-
-        let mut killing_it = false;
-        let mut pid = build.pid;
-        loop {
-            let mut build_done = Box::pin(build.wait());
-            match select(Box::pin(fs_watch.recv()), &mut build_done).await {
-                Left(_) => {
-                    if killing_it {
-                        info!("build in progress, sending SIGTERM");
+            Building(pid, build_task) => {
+                match select(
+                    Box::pin(fs_watch.recv()),
+                    Box::pin(async move { build_task.await.context("join build task") }),
+                )
+                .await
+                {
+                    Left((_changes, build_task)) => {
                         if let Err(e) = kill(pid, SIGTERM).context("SIGTERM build") {
-                            warn!("{e}");
-                        };
-                        killing_it = true;
-                    } else {
-                        info!("build already terminating");
-                    };
-                }
-                Right(_) => {
-                    if killing_it {
-                        build = match Build::spawn(serve_dir.clone(), build_command.clone())
-                            .await
-                            .context("spawn build")
-                        {
-                            Ok(build) => build,
-                            Err(e) => {
-                                warn!("{e}");
-                                break;
-                            }
-                        };
-                        pid = build.pid;
-                    } else {
-                        // TODO: reload the browser page if code is 0
-                        break;
+                            info!("{e}");
+                        }
+                        Terminating(build_task.boxed())
+                    }
+                    Right((Err(join_error), _changes)) => {
+                        warn!("{join_error}");
+                        Idle
+                    }
+                    Right((Ok(Err(wait_error)), _changes)) => {
+                        warn!("{wait_error}");
+                        Idle
+                    }
+                    Right((Ok(Ok(None)), _changes)) => {
+                        warn!("build exited without code");
+                        Idle
+                    }
+                    Right((Ok(Ok(Some(code @ (..0 | 1..)))), _changes)) => {
+                        info!("build exited with {code}");
+                        Idle
+                    }
+                    Right((Ok(Ok(Some(0))), _changes)) => {
+                        info!("build success");
+                        browser.reload_page().await.context("reload page")?;
+                        Idle
                     }
                 }
             }
-        }
+            Terminating(join_handle) => todo!(),
+        };
     }
 }
-
-/*
-
-
-buildstate::start
-|
-v
-browser page reload
-
-
-buildstate
-- nothing (not started yet)
-- building
-- stopping
-
-
-
-        start v
-nothing ->  building -> nothing  + send reload
-
-
-
-
-      start v         start v    start v
-nothing ->  building -> stopping -> building -> nothing + send reload
-
-
-*/

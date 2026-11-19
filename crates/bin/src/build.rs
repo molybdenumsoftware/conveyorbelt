@@ -7,7 +7,7 @@ use tokio::{
     process::{Child, Command},
     task,
 };
-use tracing::info;
+use tracing::{info, warn};
 
 use crate::{
     common::{ForStdoutputLine as _, SERVE_PATH},
