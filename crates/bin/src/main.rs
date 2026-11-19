@@ -9,15 +9,13 @@ mod logging;
 mod server;
 mod signal;
 
-use std::pin::Pin;
-
 use anyhow::Context;
 use futures::{
     FutureExt,
     future::{
         BoxFuture,
         Either::{Left, Right},
-        LocalBoxFuture, select,
+        select,
     },
 };
 use nix::{
@@ -109,30 +107,41 @@ async fn main() -> anyhow::Result<()> {
                         }
                         Terminating(build_task.boxed())
                     }
-                    Right((Err(join_error), _changes)) => {
-                        warn!("{join_error}");
-                        Idle
-                    }
-                    Right((Ok(Err(wait_error)), _changes)) => {
-                        warn!("{wait_error}");
-                        Idle
-                    }
-                    Right((Ok(Ok(None)), _changes)) => {
-                        warn!("build exited without code");
-                        Idle
-                    }
-                    Right((Ok(Ok(Some(code @ (..0 | 1..)))), _changes)) => {
-                        info!("build exited with {code}");
-                        Idle
-                    }
-                    Right((Ok(Ok(Some(0))), _changes)) => {
-                        info!("build success");
-                        browser.reload_page().await.context("reload page")?;
+                    Right((join_result, _)) => {
+                        match join_result {
+                            Err(join_error) => warn!("{join_error}"),
+                            Ok(Err(wait_error)) => warn!("{wait_error}"),
+                            Ok(Ok(None)) => warn!("build exited without code"),
+                            Ok(Ok(Some(code @ (..0 | 1..)))) => info!("build exited with {code}"),
+                            Ok(Ok(Some(0))) => {
+                                info!("build success");
+                                browser.reload_page().await.context("reload page")?;
+                            }
+                        }
                         Idle
                     }
                 }
             }
-            Terminating(join_handle) => todo!(),
+            Terminating(build_task) => match select(Box::pin(fs_watch.recv()), build_task).await {
+                Left((_changes, build_task)) => Terminating(build_task),
+                Right((join_result, _)) => {
+                    match join_result {
+                        Err(join_error) => warn!("{join_error}"),
+                        Ok(Err(wait_error)) => warn!("{wait_error}"),
+                        Ok(Ok(None)) => warn!("build exited without code"),
+                        Ok(Ok(Some(code))) => info!("build exited with {code}"),
+                    }
+
+                    let build = Build::spawn(serve_dir.clone(), build_command.clone())
+                        .await
+                        .context("build spawn")?;
+
+                    Building(
+                        build.pid,
+                        tokio::spawn(async move { build.wait().await.context("build wait") }),
+                    )
+                }
+            },
         };
     }
 }
