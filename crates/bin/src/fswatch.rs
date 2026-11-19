@@ -1,6 +1,6 @@
 use anyhow::Context;
 use git2::Repository;
-use notify::{RecursiveMode, Watcher as _};
+use notify::{INotifyWatcher, RecursiveMode, Watcher as _};
 use tokio::sync::mpsc::{self, Receiver};
 use tracing::{info, warn};
 
@@ -65,7 +65,10 @@ pub(crate) enum FsChangeKind {
 }
 
 #[derive(Debug)]
-pub(crate) struct FsWatch(Receiver<anyhow::Result<Vec<FsChange>>>);
+pub(crate) struct FsWatch {
+    _watcher: INotifyWatcher,
+    receiver: Receiver<anyhow::Result<Vec<FsChange>>>,
+}
 
 impl FsWatch {
     pub fn init(path: impl AsRef<Path>) -> anyhow::Result<Self> {
@@ -119,13 +122,16 @@ impl FsWatch {
             .watch(path.as_ref(), RecursiveMode::Recursive)
             .context("begin watching")?;
 
-        Ok(FsWatch(event_receiver))
+        Ok(FsWatch {
+            _watcher: watcher,
+            receiver: event_receiver,
+        })
     }
 
     pub async fn recv(&mut self) {
         loop {
             let changes = match self
-                .0
+                .receiver
                 .recv()
                 .await
                 .context("receive fs events")

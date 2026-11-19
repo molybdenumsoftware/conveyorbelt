@@ -295,16 +295,11 @@ fn sigint() {
     let mut subject = fixture.spawn_subject().unwrap();
 
     subject
-        .wait_stderr_contains("event: signal: handler installed")
+        .wait_stderr_contains("handling SIGINT & SIGTERM")
         .unwrap();
 
     subject.signal(SIGINT).unwrap();
-
-    subject
-        .wait_stderr_contains("event: signal: received: SIGINT")
-        .unwrap();
-
-    subject.wait_stderr_contains("exit: 0").unwrap();
+    subject.wait_stderr_contains("received SIGINT").unwrap();
     let status = subject.wait().unwrap();
     assert_eq!(status.code(), Some(0));
 }
@@ -315,16 +310,11 @@ fn sigterm() {
     let mut subject = fixture.spawn_subject().unwrap();
 
     subject
-        .wait_stderr_contains("event: signal: handler installed")
+        .wait_stderr_contains("handling SIGINT & SIGTERM")
         .unwrap();
 
     subject.signal(SIGTERM).unwrap();
-
-    subject
-        .wait_stderr_contains("event: signal: received: SIGTERM")
-        .unwrap();
-
-    subject.wait_stderr_contains("exit: 0").unwrap();
+    subject.wait_stderr_contains("received SIGTERM").unwrap();
     let status = subject.wait().unwrap();
     assert_eq!(status.code(), Some(0));
 }
