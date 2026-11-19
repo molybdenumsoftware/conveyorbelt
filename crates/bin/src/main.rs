@@ -75,7 +75,6 @@ async fn main_loop() -> anyhow::Result<()> {
     enum State {
         Idle,
         Building(Pid, JoinHandle<anyhow::Result<Option<i32>>>),
-        //Terminating(Pin<Box<dyn Future<Output = anyhow::Result<anyhow::Result<Option<i32>>>>>>),
         Terminating(BoxFuture<'static, anyhow::Result<anyhow::Result<Option<i32>>>>),
     }
     use State::*;
