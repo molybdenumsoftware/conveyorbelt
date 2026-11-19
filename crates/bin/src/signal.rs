@@ -18,7 +18,7 @@ pub fn listen() -> anyhow::Result<BoxFuture<'static, SignalKind>> {
     let mut sigterm =
         signal(tokio::signal::unix::SignalKind::terminate()).context("create sigterm listener")?;
 
-    let f = async move {
+    let fut = async move {
         let kind = select! {
             _ = sigint.recv() => SignalKind::Int,
             _ = sigterm.recv() => SignalKind::Term,
@@ -28,6 +28,6 @@ pub fn listen() -> anyhow::Result<BoxFuture<'static, SignalKind>> {
     }
     .boxed();
 
-    info!("listening on sigint and sigterm");
-    Ok(f)
+    info!("handling SIGINT & SIGTERM");
+    Ok(fut)
 }

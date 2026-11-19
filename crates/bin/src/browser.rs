@@ -29,9 +29,9 @@ impl Browser {
     }
 
     pub async fn launch(url: &str) -> anyhow::Result<Self> {
-        info!("launching browser");
+        info!("launching");
         let dir = tempdir().context("create data dir")?;
-        debug!("browser data dir: {dir:?}");
+        debug!("data dir: {dir:?}");
 
         let mut config = BrowserConfig::builder()
             .with_head()
@@ -61,7 +61,7 @@ impl Browser {
             .id()
             .context("get pid")?;
 
-        info!("browser launched: {pid}");
+        info!("launched: {pid}");
 
         tokio::spawn(async move { while handler.next().await.is_some() {} });
 

@@ -27,8 +27,6 @@ impl ServeDir {
     }
 }
 
-// TODO #[display("server spawned: {address}")]
-
 #[derive(Debug, derive_more::Display)]
 #[display("server at {address}")]
 pub(crate) struct Server {
@@ -90,6 +88,8 @@ impl Server {
             drop(dir);
             result
         });
+
+        info!("listening {address}");
 
         Ok(Self {
             address,

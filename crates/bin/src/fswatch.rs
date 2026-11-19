@@ -124,7 +124,13 @@ impl FsWatch {
 
     pub async fn recv(&mut self) {
         loop {
-            let changes = match self.0.recv().await.unwrap() {
+            let changes = match self
+                .0
+                .recv()
+                .await
+                .context("receive fs events")
+                .expect("never closes")
+            {
                 Err(e) => {
                     warn!("{e}");
                     continue;

@@ -30,7 +30,7 @@ impl GitToplevel {
             .parse()
             .context("parse git_toplevel into `PathBuf`")?;
 
-        info!("git toplevel obtained: {git_toplevel:?}");
+        info!("toplevel obtained: {git_toplevel:?}");
         Ok(Self(git_toplevel))
     }
 }

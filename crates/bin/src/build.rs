@@ -7,7 +7,7 @@ use tokio::{
     process::{Child, Command},
     task,
 };
-use tracing::{info, warn};
+use tracing::info;
 
 use crate::{
     common::{ForStdoutputLine as _, SERVE_PATH},
@@ -37,7 +37,7 @@ impl Build {
             .stdout(Stdio::piped())
             .stderr(Stdio::piped());
 
-        info!("spawn build {command:?}");
+        info!("{command:?}");
         let mut child = command.spawn().context("spawn command")?;
         let pid = Pid::from_raw(child.id().context("get id")? as i32);
 
@@ -51,7 +51,7 @@ impl Build {
             async {}.boxed()
         });
 
-        info!("spawned build {pid}");
+        info!("spawned {pid}");
 
         Ok(Self {
             child,

@@ -39,6 +39,7 @@ async fn page_content_is_served() {
         .unwrap();
 
     let mut subject = fixture.spawn_subject().unwrap();
+    subject.wait_stderr_contains("build success").unwrap();
     let browser = FreshBrowser::spawn().await.unwrap();
 
     let title = browser
