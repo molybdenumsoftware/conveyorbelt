@@ -1,10 +1,11 @@
 use anyhow::Context;
-use git2::Repository;
 use notify::{INotifyWatcher, RecursiveMode, Watcher as _};
 use tokio::sync::mpsc::{self, Receiver};
-use tracing::{info, warn};
+use tracing::{debug, info, warn};
 
-use std::path::{Path, PathBuf};
+use std::path::PathBuf;
+
+use crate::git::GitRepo;
 
 // TODO logging
 // #[derive(derive_more::Display)]
@@ -71,10 +72,11 @@ pub(crate) struct FsWatch {
 }
 
 impl FsWatch {
-    pub fn init(path: impl AsRef<Path>) -> anyhow::Result<Self> {
-        let repository = Repository::open_from_env().context("open git repo")?;
+    pub fn init(repo: GitRepo) -> anyhow::Result<Self> {
+        debug!("fs watch init");
         let (event_sender, event_receiver) = mpsc::channel(1);
 
+        let path = repo.workdir().to_owned();
         let event_handler =
             move |result: notify::Result<notify::Event>| -> anyhow::Result<Vec<FsChange>> {
                 let event = result.context("fs watch error")?;
@@ -99,9 +101,7 @@ impl FsWatch {
                 };
 
                 for path in event.paths {
-                    let is_ignored = repository
-                        .is_path_ignored(&path)
-                        .context("ask wether path is ignored")?;
+                    let is_ignored = repo.is_path_ignored(&path)?;
 
                     changes.push(FsChange {
                         path,
@@ -119,7 +119,7 @@ impl FsWatch {
         .context("create watcher")?;
 
         watcher
-            .watch(path.as_ref(), RecursiveMode::Recursive)
+            .watch(&path, RecursiveMode::Recursive)
             .context("begin watching")?;
 
         Ok(FsWatch {

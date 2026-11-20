@@ -18,12 +18,9 @@ use futures::{
         select,
     },
 };
-use nix::{
-    sys::signal::{Signal::SIGTERM, kill},
-    unistd::Pid,
-};
+use nix::unistd::Pid;
 use tokio::task::JoinHandle;
-use tracing::{info, warn};
+use tracing::warn;
 
 use crate::{
     browser::Browser,
@@ -31,7 +28,7 @@ use crate::{
     cli::Args,
     common::{StateForTesting, TESTING_MODE},
     fswatch::FsWatch,
-    git::GitToplevel,
+    git::GitRepo,
     server::{ServeDir, Server},
 };
 
@@ -71,8 +68,8 @@ async fn main_loop(
     serve_address: String,
     build_command: BuildCommandPath,
 ) -> anyhow::Result<()> {
-    let toplevel = GitToplevel::resolve().context("get git toplevel")?;
-    let mut fs_watch = FsWatch::init(&toplevel).context("init fs watch")?;
+    let git_repo = GitRepo::resolve().context("resolve git repo")?;
+    let mut fs_watch = FsWatch::init(git_repo).context("init fs watch")?;
 
     let mut browser = Browser::launch(&serve_address)
         .await
@@ -123,12 +120,7 @@ async fn main_loop(
                 .await
                 {
                     Left((_changes, build_task)) => {
-                        info!("SIGTERM build {pid}");
-                        if let Err(e) =
-                            kill(pid, SIGTERM).with_context(|| format!("SIGTERM build {pid}"))
-                        {
-                            info!("{e}");
-                        }
+                        Build::terminate(pid);
                         Terminating(build_task.boxed())
                     }
                     Right((join_result, _)) => {

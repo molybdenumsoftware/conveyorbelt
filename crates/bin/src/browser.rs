@@ -29,7 +29,6 @@ impl Browser {
     }
 
     pub async fn launch(url: &str) -> anyhow::Result<Self> {
-        info!("launching");
         let dir = tempdir().context("create data dir")?;
         debug!("data dir: {dir:?}");
 
@@ -48,8 +47,9 @@ impl Browser {
             .map_err(|s| anyhow!("{s}"))
             .context("build config")?;
 
-        debug!("browser config: {config:?}");
+        debug!("{config:?}");
 
+        info!("launching");
         let (mut browser, mut handler) = chromiumoxide::Browser::launch(config)
             .await
             .context("launch")?;
@@ -61,7 +61,7 @@ impl Browser {
             .id()
             .context("get pid")?;
 
-        info!("launched: {pid}");
+        info!("launched {pid}");
 
         tokio::spawn(async move { while handler.next().await.is_some() {} });
 

@@ -1,36 +1,33 @@
-use std::{path::PathBuf, process::Command};
+use std::path::{Path, PathBuf};
 
-use anyhow::{Context as _, Ok, bail};
-use tracing::info;
+use anyhow::{Context as _, Ok};
+use tracing::{debug, info};
 
-#[derive(Debug, Clone, derive_more::AsRef)]
-#[as_ref(forward)]
-pub struct GitToplevel(PathBuf);
+pub struct GitRepo {
+    repo: git2::Repository,
+    workdir: PathBuf,
+}
 
-impl GitToplevel {
+impl GitRepo {
     pub fn resolve() -> anyhow::Result<Self> {
-        let mut command = Command::new("git");
-        command.args(["rev-parse", "--show-toplevel"]);
-        let output = command.output().with_context(|| format!("{command:?}"))?;
+        debug!("resolve git repo");
+        let repo = git2::Repository::open_from_env().context("open from env")?;
+        debug!("resolved");
+        let workdir = repo.workdir().context("resolve workdir")?.to_path_buf();
+        info!("git workdir {workdir:?}");
+        Ok(Self { repo, workdir })
+    }
 
-        if !output.status.success() {
-            let exit_status = output.status;
-            let stderr = String::from_utf8_lossy(&output.stderr);
-            bail!("{command:?} exited with {exit_status}. stderr: {stderr}");
-        }
+    pub fn workdir(&self) -> &Path {
+        &self.workdir
+    }
 
-        let var_name: String = output
-            .stdout
-            .try_into()
-            .with_context(|| format!("{command:?} wrote non-UTF-8 to stdout"))?;
+    pub fn is_path_ignored(&self, path: impl AsRef<Path>) -> anyhow::Result<bool> {
+        let answer = self.repo.is_path_ignored(&path).with_context(|| {
+            let path = path.as_ref();
+            format!("ask whether {path:?} is ignored")
+        })?;
 
-        let git_toplevel = var_name
-            .trim_end()
-            .to_string()
-            .parse()
-            .context("parse git_toplevel into `PathBuf`")?;
-
-        info!("toplevel obtained: {git_toplevel:?}");
-        Ok(Self(git_toplevel))
+        Ok(answer)
     }
 }

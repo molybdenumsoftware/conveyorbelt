@@ -1,8 +1,11 @@
 use std::{path::PathBuf, process::Stdio};
 
-use anyhow::Context;
+use anyhow::{Context, Ok};
 use futures::FutureExt;
-use nix::unistd::Pid;
+use nix::{
+    sys::signal::{Signal::SIGTERM, kill},
+    unistd::Pid,
+};
 use tokio::{
     process::{Child, Command},
     task,
@@ -39,12 +42,12 @@ impl Build {
         let id = Pid::from_raw(child.id().context("get id")? as i32);
 
         let stdout_join_handle = child.for_stdout_line(move |line| {
-            eprintln!("stdout: {line}");
+            info!("stdout: {line}");
             async {}.boxed()
         });
 
         let stderr_join_handle = child.for_stderr_line(move |line| {
-            eprintln!("stderr: {line}");
+            info!("stderr: {line}");
             async {}.boxed()
         });
 
@@ -82,7 +85,7 @@ impl Build {
                 false
             }
             Some(code @ (..0 | 1..)) => {
-                info!("build exited with {code}");
+                info!("{id} exit with {code}");
                 false
             }
             Some(0) => {
@@ -92,5 +95,12 @@ impl Build {
         };
 
         Ok(success)
+    }
+
+    pub(crate) fn terminate(pid: Pid) {
+        info!("SIGTERM {pid}");
+        if let Err(e) = kill(pid, SIGTERM) {
+            info!("{e}");
+        }
     }
 }
