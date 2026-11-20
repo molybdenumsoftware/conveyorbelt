@@ -77,6 +77,10 @@ version = "*"
 default-features = false
 version = "*"
 
+[workspace.dependencies.strip-ansi-escapes]
+default-features = false
+version = "*"
+
 [workspace.dependencies.tempfile]
 default-features = false
 version = "*"

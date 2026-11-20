@@ -25,6 +25,7 @@ in
         "serde_json"
         "static-web-server"
         "static_init"
+        "strip-ansi-escapes"
         "tempfile"
         "thiserror"
         "tokio-stream"
@@ -100,6 +101,7 @@ in
           "indoc"
           "maud"
           "static_init"
+          "strip-ansi-escapes"
         ]
         (_: {
           workspace = true;

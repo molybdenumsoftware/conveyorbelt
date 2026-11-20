@@ -65,6 +65,9 @@ workspace = true
 [dev-dependencies.static_init]
 workspace = true
 
+[dev-dependencies.strip-ansi-escapes]
+workspace = true
+
 [package]
 description = "A based web dev workflow; stack-agnostic, hand-coded, 🦀"
 name = "conveyorbelt"

@@ -1265,6 +1265,8 @@ mod fixture {
                         .take(line_feed_index)
                         .collect::<String>();
 
+                    let line = strip_ansi_escapes::strip_str(&line);
+
                     if line.contains(pat) {
                         return Ok(line);
                     }
