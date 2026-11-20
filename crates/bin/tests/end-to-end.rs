@@ -807,6 +807,7 @@ mod kill_wait {
 }
 
 mod droppy_child {
+    use anyhow::Context;
     use nix::sys::signal::Signal::SIGTERM;
 
     use crate::signalable::Signalable as _;
@@ -839,15 +840,19 @@ mod droppy_child {
             let Some(mut inner) = self.0.take() else {
                 return;
             };
-            if let Err(e) = inner.signal(SIGTERM) {
-                eprintln!("Failed to signal dropped child: {e}");
+            let id = inner.id();
+            if let Err(e) = inner
+                .signal(SIGTERM)
+                .with_context(|| format!("SIGTERM {id} on drop"))
+            {
+                eprintln!("{e}");
                 return;
             }
             let Ok(status) = inner.wait() else { return };
             if status.success() {
                 return;
             }
-            eprintln!("Dropped child terminated with {status}")
+            eprintln!("{id} {status}")
         }
     }
 }

@@ -11,7 +11,7 @@ pub(crate) enum SignalKind {
     Term,
 }
 
-pub fn listen() -> anyhow::Result<BoxFuture<'static, SignalKind>> {
+pub fn listen() -> anyhow::Result<BoxFuture<'static, ()>> {
     debug!("install signal listener");
     let mut sigint =
         signal(tokio::signal::unix::SignalKind::interrupt()).context("create sigint listener")?;
@@ -24,7 +24,6 @@ pub fn listen() -> anyhow::Result<BoxFuture<'static, SignalKind>> {
             _ = sigterm.recv() => SignalKind::Term,
         };
         info!("received {kind}");
-        kind
     }
     .boxed();
 

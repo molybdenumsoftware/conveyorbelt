@@ -27,7 +27,7 @@ use tracing::{info, warn};
 
 use crate::{
     browser::Browser,
-    build::Build,
+    build::{Build, BuildCommandPath},
     cli::Args,
     common::{StateForTesting, TESTING_MODE},
     fswatch::FsWatch,
@@ -38,35 +38,52 @@ use crate::{
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
     logging::init();
+    let Args { build_command } = crate::cli::parse();
     let signal = signal::listen().context("listen on signals")?;
+    let serve_dir = ServeDir::create()?;
 
-    match select(signal, Box::pin(main_loop())).await {
-        Left((signal, _)) => {
-            info!("caught {signal}");
+    let server = Server::start(serve_dir.clone())
+        .await
+        .context("start server")?;
+
+    match select(
+        signal,
+        Box::pin(main_loop(
+            serve_dir.clone(),
+            server.port(),
+            server.address(),
+            build_command,
+        )),
+    )
+    .await
+    {
+        Left((_signal, _)) => {
+            if let Err(e) = server.shutdown().await.context("server shutdown") {
+                warn!("{e}")
+            }
             Ok(())
         }
         Right((result, _)) => result,
     }
 }
 
-async fn main_loop() -> anyhow::Result<()> {
-    let Args { build_command } = crate::cli::parse();
+async fn main_loop(
+    serve_dir: ServeDir,
+    serve_port: u16,
+    serve_address: String,
+    build_command: BuildCommandPath,
+) -> anyhow::Result<()> {
     let toplevel = GitToplevel::resolve().context("get git toplevel")?;
-    let serve_dir = ServeDir::create()?;
     let mut fs_watch = FsWatch::init(&toplevel).context("init fs watch")?;
 
-    let server = Server::start(serve_dir.clone())
-        .await
-        .context("start server")?;
-
-    let mut browser = Browser::launch(&server.address())
+    let mut browser = Browser::launch(&serve_address)
         .await
         .context("launch browser")?;
 
     if std::env::var(TESTING_MODE).is_ok() {
         let state_for_testing = StateForTesting {
             serve_path: serve_dir.path().to_path_buf(),
-            serve_port: server.port(),
+            serve_port,
             browser_debugging_address: browser.websocket_address().to_owned(),
             browser_pid: browser.pid(),
         };
