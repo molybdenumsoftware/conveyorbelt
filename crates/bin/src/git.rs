@@ -1,7 +1,7 @@
 use std::path::{Path, PathBuf};
 
 use anyhow::{Context as _, Ok};
-use tracing::{debug, info};
+use tracing::info;
 
 pub struct GitRepo {
     repo: git2::Repository,
@@ -10,9 +10,7 @@ pub struct GitRepo {
 
 impl GitRepo {
     pub fn resolve() -> anyhow::Result<Self> {
-        debug!("resolve git repo");
-        let repo = git2::Repository::open_from_env().context("open from env")?;
-        debug!("resolved");
+        let repo = git2::Repository::open_from_env().context("find git repo")?;
         let workdir = repo.workdir().context("resolve workdir")?.to_path_buf();
         info!("git workdir {workdir:?}");
         Ok(Self { repo, workdir })

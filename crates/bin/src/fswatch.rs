@@ -114,7 +114,7 @@ impl FsWatch {
             };
 
         let mut watcher = notify::recommended_watcher(move |event| {
-            event_sender.blocking_send(event_handler(event)).unwrap();
+            let _ = event_sender.blocking_send(event_handler(event));
         })
         .context("create watcher")?;
 

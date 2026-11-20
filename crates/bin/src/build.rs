@@ -25,11 +25,13 @@ pub struct Build {
     stderr_join_handle: task::JoinHandle<()>,
 }
 
-#[derive(Debug, Clone, derive_more::FromStr)]
+#[derive(Clone, derive_more::FromStr, derive_more::Debug)]
+#[debug("{_0:?}")]
 pub struct BuildCommandPath(PathBuf);
 
 impl Build {
     pub async fn spawn(serve_dir: ServeDir, command: BuildCommandPath) -> anyhow::Result<Self> {
+        info!("command {command:?}");
         let mut command = Command::new(command.0);
 
         command
@@ -37,7 +39,6 @@ impl Build {
             .stdout(Stdio::piped())
             .stderr(Stdio::piped());
 
-        info!("{command:?}");
         let mut child = command.spawn().context("spawn command")?;
         let id = Pid::from_raw(child.id().context("get id")? as i32);
 

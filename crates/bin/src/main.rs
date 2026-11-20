@@ -70,7 +70,7 @@ async fn main_loop(
     serve_address: String,
     build_command: BuildCommandPath,
 ) -> anyhow::Result<()> {
-    let git_repo = GitRepo::resolve().context("resolve git repo")?;
+    let git_repo = GitRepo::resolve()?;
     let mut fs_watch = FsWatch::init(git_repo).context("init fs watch")?;
 
     let mut browser = Browser::launch(&serve_address)
