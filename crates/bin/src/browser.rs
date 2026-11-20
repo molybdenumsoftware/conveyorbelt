@@ -95,8 +95,9 @@ impl Browser {
     }
 
     pub async fn reload_page(&mut self) -> anyhow::Result<()> {
-        info!("reload page");
+        debug!("reload page");
         self.page.reload().await.context("reload page")?;
+        info!("reloaded page");
         Ok(())
     }
 }

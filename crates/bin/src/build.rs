@@ -14,13 +14,10 @@ use crate::{
     server::ServeDir,
 };
 
-// TODO #[display("spawn {path:?} with serve dir {serve_dir:?}")]
-// TODO #[display("spawn pid {pid}")]
-
 #[derive(Debug)]
 pub struct Build {
     child: Child,
-    pub pid: Pid,
+    pub id: Pid,
     stdout_join_handle: task::JoinHandle<()>,
     stderr_join_handle: task::JoinHandle<()>,
 }
@@ -39,7 +36,7 @@ impl Build {
 
         info!("{command:?}");
         let mut child = command.spawn().context("spawn command")?;
-        let pid = Pid::from_raw(child.id().context("get id")? as i32);
+        let id = Pid::from_raw(child.id().context("get id")? as i32);
 
         let stdout_join_handle = child.for_stdout_line(move |line| {
             eprintln!("stdout: {line}");
@@ -51,17 +48,17 @@ impl Build {
             async {}.boxed()
         });
 
-        info!("spawned {pid}");
+        info!("spawned {id}");
 
         Ok(Self {
             child,
-            pid,
+            id,
             stdout_join_handle,
             stderr_join_handle,
         })
     }
 
-    pub async fn wait(self) -> anyhow::Result<Option<i32>> {
+    pub async fn wait(self) -> anyhow::Result<bool> {
         let Self {
             mut child,
             stdout_join_handle,
@@ -69,24 +66,31 @@ impl Build {
             ..
         } = self;
 
+        let id = self.id;
+
         let code = child
             .wait()
             .await
-            .with_context(|| format!("wait on {child:?}"))?
+            .with_context(|| format!("wait {id}"))?
             .code();
 
         tokio::try_join!(stdout_join_handle, stderr_join_handle).context("join output tasks")?;
 
-        Ok(code)
+        let success = match code {
+            None => {
+                info!("{id} exit without code");
+                false
+            }
+            Some(code @ (..0 | 1..)) => {
+                info!("build exited with {code}");
+                false
+            }
+            Some(0) => {
+                info!("success");
+                true
+            }
+        };
+
+        Ok(success)
     }
 }
-// TODO Some(non_zero) => bail!("build exited with: {non_zero}"),
-// TODO None => bail!("build exited with no code"),
-
-// TODO #[display("wait for {child:?}")]
-
-// TODO #[display("build succeeded")]
-
-// TODO #[display("send {signal} to {pid}")]
-
-// TODO #[display("signal sent")]

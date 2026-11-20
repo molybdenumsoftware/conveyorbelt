@@ -1,5 +1,4 @@
 use anyhow::Context as _;
-use futures::{FutureExt, future::BoxFuture};
 use tokio::{select, signal::unix::signal};
 use tracing::{debug, info};
 
@@ -11,7 +10,7 @@ pub(crate) enum SignalKind {
     Term,
 }
 
-pub fn listen() -> anyhow::Result<BoxFuture<'static, ()>> {
+pub fn listen() -> anyhow::Result<impl Future<Output = ()>> {
     debug!("install signal listener");
     let mut sigint =
         signal(tokio::signal::unix::SignalKind::interrupt()).context("create sigint listener")?;
@@ -24,8 +23,7 @@ pub fn listen() -> anyhow::Result<BoxFuture<'static, ()>> {
             _ = sigterm.recv() => SignalKind::Term,
         };
         info!("received {kind}");
-    }
-    .boxed();
+    };
 
     info!("handling SIGINT & SIGTERM");
     Ok(fut)

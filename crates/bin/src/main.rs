@@ -46,25 +46,23 @@ async fn main() -> anyhow::Result<()> {
         .await
         .context("start server")?;
 
-    match select(
-        signal,
-        Box::pin(main_loop(
-            serve_dir.clone(),
-            server.port(),
-            server.address(),
-            build_command,
-        )),
-    )
-    .await
-    {
-        Left((_signal, _)) => {
-            if let Err(e) = server.shutdown().await.context("server shutdown") {
-                warn!("{e}")
-            }
-            Ok(())
-        }
+    let main_loop = main_loop(
+        serve_dir.clone(),
+        server.port(),
+        server.address(),
+        build_command,
+    );
+
+    let result = match select(Box::pin(signal), Box::pin(main_loop)).await {
+        Left((_signal, _)) => Ok(()),
         Right((result, _)) => result,
+    };
+
+    if let Err(e) = server.shutdown().await.context("server shutdown") {
+        warn!("{e}");
     }
+
+    result
 }
 
 async fn main_loop(
@@ -91,8 +89,8 @@ async fn main_loop(
     }
     enum State {
         Idle,
-        Building(Pid, JoinHandle<anyhow::Result<Option<i32>>>),
-        Terminating(BoxFuture<'static, anyhow::Result<anyhow::Result<Option<i32>>>>),
+        Building(Pid, JoinHandle<anyhow::Result<bool>>),
+        Terminating(BoxFuture<'static, anyhow::Result<anyhow::Result<bool>>>),
     }
     use State::*;
 
@@ -101,7 +99,7 @@ async fn main_loop(
         .context("spawn build")?;
 
     let mut state = State::Building(
-        build.pid,
+        build.id,
         tokio::spawn(async move { build.wait().await.context("wait build") }),
     );
     loop {
@@ -113,7 +111,7 @@ async fn main_loop(
                     .context("build spawn")?;
 
                 Building(
-                    build.pid,
+                    build.id,
                     tokio::spawn(async move { build.wait().await.context("build wait") }),
                 )
             }
@@ -125,7 +123,10 @@ async fn main_loop(
                 .await
                 {
                     Left((_changes, build_task)) => {
-                        if let Err(e) = kill(pid, SIGTERM).context("SIGTERM build") {
+                        info!("SIGTERM build {pid}");
+                        if let Err(e) =
+                            kill(pid, SIGTERM).with_context(|| format!("SIGTERM build {pid}"))
+                        {
                             info!("{e}");
                         }
                         Terminating(build_task.boxed())
@@ -134,10 +135,8 @@ async fn main_loop(
                         match join_result {
                             Err(join_error) => warn!("{join_error}"),
                             Ok(Err(wait_error)) => warn!("{wait_error}"),
-                            Ok(Ok(None)) => warn!("build exited without code"),
-                            Ok(Ok(Some(code @ (..0 | 1..)))) => info!("build exited with {code}"),
-                            Ok(Ok(Some(0))) => {
-                                info!("build success");
+                            Ok(Ok(false)) => {}
+                            Ok(Ok(true)) => {
                                 browser.reload_page().await.context("reload page")?;
                             }
                         }
@@ -151,8 +150,7 @@ async fn main_loop(
                     match join_result {
                         Err(join_error) => warn!("{join_error}"),
                         Ok(Err(wait_error)) => warn!("{wait_error}"),
-                        Ok(Ok(None)) => warn!("build exited without code"),
-                        Ok(Ok(Some(code))) => info!("build exited with {code}"),
+                        Ok(Ok(false | true)) => {}
                     }
 
                     let build = Build::spawn(serve_dir.clone(), build_command.clone())
@@ -160,7 +158,7 @@ async fn main_loop(
                         .context("build spawn")?;
 
                     Building(
-                        build.pid,
+                        build.id,
                         tokio::spawn(async move { build.wait().await.context("build wait") }),
                     )
                 }
