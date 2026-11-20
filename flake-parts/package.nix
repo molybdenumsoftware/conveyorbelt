@@ -20,7 +20,6 @@
         DBUS_DAEMON_EXECUTABLE = lib.getExe' pkgs.dbus "dbus-daemon";
         DBUS_SESSION_CONFIG_FILE = "${pkgs.dbus}/share/dbus-1/session.conf";
         GIT_BIN_PATH = "${pkgs.git}/bin";
-        # TODO ungoogled-chromium
         CHROMIUM_BIN_PATH = "${pkgs.ungoogled-chromium}/bin";
       };
 
