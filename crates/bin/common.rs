@@ -16,7 +16,7 @@ pub(crate) struct StateForTesting {
 
 impl std::fmt::Display for StateForTesting {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        let string = serde_json::to_string(&self).unwrap();
+        let string = serde_json::to_string(&self).expect("seems to serialize I guess");
         write!(f, "{string}")
     }
 }

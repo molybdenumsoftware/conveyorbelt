@@ -5,10 +5,11 @@ mod cli;
 mod common;
 mod fswatch;
 mod git;
-mod logging;
 mod serve_dir;
 mod server;
 mod signal;
+#[path = "tracing.rs"]
+mod tracing_;
 
 use anyhow::Context;
 use futures::{
@@ -36,7 +37,7 @@ use crate::{
 
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
-    logging::init();
+    tracing_::init();
     let Args { build_command } = crate::cli::parse();
     let signal = signal::listen().context("listen on signals")?;
     let serve_dir = ServeDir::create()?;

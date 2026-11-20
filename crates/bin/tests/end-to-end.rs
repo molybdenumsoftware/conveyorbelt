@@ -1019,7 +1019,6 @@ mod fixture {
                 .env_clear()
                 .env("DISPLAY", Xvfb::DISPLAY)
                 .env(TESTING_MODE, "true")
-                .env("LOG_FILTER_VAR_NAME", env!("LOG_FILTER_VAR_NAME"))
                 .env(
                     "PATH",
                     std::env::join_paths(&self.subject_path_env_var).unwrap(),
@@ -1027,9 +1026,9 @@ mod fixture {
                 .env("SRC_PATH", self.src_path())
                 .arg(self.build_command.as_os_str());
 
-            match env::var(env!("LOG_FILTER_VAR_NAME")) {
+            match env::var("LOG") {
                 Ok(log_filter) => {
-                    command.env(env!("LOG_FILTER_VAR_NAME"), log_filter);
+                    command.env("LOG", log_filter);
                 }
                 Err(env::VarError::NotPresent) => {}
                 Err(error @ env::VarError::NotUnicode(_)) => {

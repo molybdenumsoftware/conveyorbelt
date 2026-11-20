@@ -23,6 +23,9 @@ workspace = true
 [dependencies.hyper]
 workspace = true
 
+[dependencies.indoc]
+workspace = true
+
 [dependencies.nix]
 workspace = true
 

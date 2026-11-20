@@ -4,7 +4,7 @@ use std::{
     sync::Arc,
 };
 
-use anyhow::Context as _;
+use anyhow::{Context as _, anyhow};
 use hyper::StatusCode;
 use static_web_server::{
     handler::{RequestHandler, RequestHandlerOpts},
@@ -70,7 +70,9 @@ impl Server {
                 opts: Arc::from(handler_opts),
             }))
             .with_graceful_shutdown(async move {
-                shutdown_signal.await.unwrap();
+                shutdown_signal
+                    .await
+                    .expect("sender is supposed to be open");
             });
 
         let join = tokio::spawn(async move {
@@ -89,7 +91,10 @@ impl Server {
     }
 
     pub async fn shutdown(self) -> anyhow::Result<()> {
-        self.shutdown_sender.send(()).unwrap();
+        self.shutdown_sender
+            .send(())
+            .map_err(|()| anyhow!("send shutdown message"))?;
+
         self.join
             .await
             .context("server task join")?

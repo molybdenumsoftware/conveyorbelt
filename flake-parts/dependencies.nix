@@ -76,10 +76,10 @@ in
           "chromiumoxide"
           "clap"
           "derive_more"
-          "tracing-subscriber"
           "futures"
           "git2"
           "hyper"
+          "indoc"
           "nix"
           "notify"
           "serde"
@@ -90,6 +90,7 @@ in
           "tokio"
           "tokio-stream"
           "tracing"
+          "tracing-subscriber"
         ]
         (_: {
           workspace = true;
