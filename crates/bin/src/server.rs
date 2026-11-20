@@ -10,22 +10,10 @@ use static_web_server::{
     handler::{RequestHandler, RequestHandlerOpts},
     service::RouterService,
 };
-use tempfile::TempDir;
 use tokio::{sync::oneshot, task::JoinHandle};
-use tracing::{debug, info};
+use tracing::info;
 
-#[derive(Clone, Debug, derive_more::Deref, derive_more::Display)]
-#[display("serve dir: {_0:?}")]
-#[deref(forward)]
-pub(crate) struct ServeDir(Arc<TempDir>);
-
-impl ServeDir {
-    pub fn create() -> anyhow::Result<Self> {
-        debug!("create serve dir");
-        let dir = TempDir::new().context("create temp dir")?;
-        Ok(ServeDir(Arc::new(dir)))
-    }
-}
+use crate::serve_dir::ServeDir;
 
 #[derive(Debug, derive_more::Display)]
 #[display("server at {address}")]
@@ -35,16 +23,18 @@ pub(crate) struct Server {
     join: JoinHandle<hyper::Result<()>>,
 }
 
+// TODO pub(crate) vs. pub visibility throughout project
+
 impl Server {
     pub async fn start(dir: ServeDir) -> anyhow::Result<Self> {
         let handler_opts = RequestHandlerOpts {
-            root_dir: dir.path().to_path_buf(),
+            root_dir: dir.to_path_buf(),
             compression: false,
             compression_static: false,
             cors: None,
             security_headers: false,
             cache_control_headers: false,
-            page404: dir.path().join("404.html"),
+            page404: dir.join("404.html"),
             page50x: PathBuf::new(),
             index_files: ["index.html"].iter().map(|s| s.to_string()).collect(),
             log_remote_address: false,

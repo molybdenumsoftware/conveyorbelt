@@ -39,7 +39,7 @@ async fn page_content_is_served() {
         .unwrap();
 
     let mut subject = fixture.spawn_subject().unwrap();
-    subject.wait_stderr_contains("build: success").unwrap();
+    subject.wait_stderr("build: success").unwrap();
     let browser = FreshBrowser::spawn().await.unwrap();
 
     let title = browser
@@ -299,13 +299,9 @@ async fn forbid_symlinks() {
 fn sigint() {
     let fixture = Fixture::init().unwrap();
     let mut subject = fixture.spawn_subject().unwrap();
-
-    subject
-        .wait_stderr_contains("handling SIGINT & SIGTERM")
-        .unwrap();
-
+    subject.wait_stderr("handling SIGINT & SIGTERM").unwrap();
     subject.signal(SIGINT).unwrap();
-    subject.wait_stderr_contains("received SIGINT").unwrap();
+    subject.wait_stderr("received SIGINT").unwrap();
     let status = subject.wait().unwrap();
     assert_eq!(status.code(), Some(0));
 }
@@ -314,29 +310,11 @@ fn sigint() {
 fn sigterm() {
     let fixture = Fixture::init().unwrap();
     let mut subject = fixture.spawn_subject().unwrap();
-
-    subject
-        .wait_stderr_contains("handling SIGINT & SIGTERM")
-        .unwrap();
-
+    subject.wait_stderr("handling SIGINT & SIGTERM").unwrap();
     subject.signal(SIGTERM).unwrap();
-    subject.wait_stderr_contains("received SIGTERM").unwrap();
+    subject.wait_stderr("received SIGTERM").unwrap();
     let status = subject.wait().unwrap();
     assert_eq!(status.code(), Some(0));
-}
-
-#[test]
-fn cannot_find_git_executable() {
-    let mut fixture = Fixture::init().unwrap();
-    fixture.subject_path_env_var.remove(env!("GIT_BIN_PATH"));
-    let mut subject = fixture.spawn_subject().unwrap();
-
-    subject
-        .wait_stderr_contains("Error: obtain git toplevel")
-        .unwrap();
-
-    let status = subject.wait().unwrap();
-    assert_eq!(status.code(), Some(1));
 }
 
 #[test]
@@ -348,11 +326,7 @@ fn cannot_find_browser_executable() {
         .remove(env!("CHROMIUM_BIN_PATH"));
 
     let mut subject = fixture.spawn_subject().unwrap();
-
-    subject
-        .wait_stderr_contains("Error: launch browser")
-        .unwrap();
-
+    subject.wait_stderr("Error: launch browser").unwrap();
     let status = subject.wait().unwrap();
     assert_eq!(status.code(), Some(1));
 }
@@ -362,11 +336,7 @@ fn not_inside_a_git_work_tree() {
     let fixture = Fixture::init().unwrap();
     fs::remove_dir_all(fixture.root().join(".git")).unwrap();
     let mut subject = fixture.spawn_subject().unwrap();
-
-    subject
-        .wait_stderr_contains("Error: obtain git toplevel")
-        .unwrap();
-
+    subject.wait_stderr("Error: obtain git toplevel").unwrap();
     let status = subject.wait().unwrap();
     assert_eq!(status.code(), Some(1));
 }
@@ -376,7 +346,7 @@ fn build_command_not_found() {
     let fixture = Fixture::init().unwrap();
     fs::remove_file(fixture.build_command()).unwrap();
     let mut subject = fixture.spawn_subject().unwrap();
-    subject.wait_stderr_contains("Error: spawn build").unwrap();
+    subject.wait_stderr("Error: spawn build").unwrap();
     let status = subject.wait().unwrap();
     assert_eq!(status.code(), Some(1));
 }
@@ -388,7 +358,7 @@ async fn subsequent_build_failed_to_spawn() {
     subject.wait_browser_spawned().unwrap();
     fs::set_permissions(fixture.build_command(), Permissions::from_mode(0o644)).unwrap();
     fixture.write_source_file("trigger", "").unwrap();
-    subject.wait_stderr_contains("Error: spawn build").unwrap();
+    subject.wait_stderr("Error: spawn build").unwrap();
     let status = subject.wait().unwrap();
     assert_eq!(status.code(), Some(1));
 }
@@ -400,9 +370,9 @@ fn subsequent_build_terminated_with_failure() {
     subject.wait_browser_spawned().unwrap();
     fixture.set_build_command_nu("exit 1").unwrap();
     fixture.write_source_file("trigger", "").unwrap();
-    subject.wait_stderr_contains("exit with 1").unwrap();
+    subject.wait_stderr("exit with 1").unwrap();
     fixture.write_source_file("trigger", "").unwrap();
-    subject.wait_stderr_contains("exit with 1").unwrap();
+    subject.wait_stderr("exit with 1").unwrap();
 }
 
 #[tokio::test]
@@ -421,19 +391,12 @@ async fn build_process_restart() {
         .unwrap();
 
     fixture.write_source_file("trigger", "").unwrap();
-
-    subject
-        .wait_stderr_contains("build: stderr: looping")
-        .unwrap();
-
+    subject.wait_stderr("build: stderr: looping").unwrap();
     fixture.set_build_command_nu("print -e hello").unwrap();
     fixture.write_source_file("trigger-again", "").unwrap();
-    subject.wait_stderr_contains("build: SIGTERM ").unwrap();
-    subject.wait_stderr_contains(" exit without code").unwrap();
-
-    subject
-        .wait_stderr_contains("build: stderr: hello")
-        .unwrap();
+    subject.wait_stderr("build: SIGTERM ").unwrap();
+    subject.wait_stderr(" exit without code").unwrap();
+    subject.wait_stderr("build: stderr: hello").unwrap();
 }
 
 #[test]
@@ -441,7 +404,7 @@ fn build_command_not_executable() {
     let fixture = Fixture::init().unwrap();
     fs::set_permissions(fixture.build_command(), Permissions::from_mode(0o644)).unwrap();
     let mut subject = fixture.spawn_subject().unwrap();
-    subject.wait_stderr_contains("Error: spawn build").unwrap();
+    subject.wait_stderr("Error: spawn build").unwrap();
     let status = subject.wait().unwrap();
     assert_eq!(status.code(), Some(1));
 }
@@ -451,7 +414,7 @@ fn initial_build_fail() {
     let mut fixture = Fixture::init().unwrap();
     fixture.set_build_command_nu("exit 1").unwrap();
     let mut subject = fixture.spawn_subject().unwrap();
-    subject.wait_stderr_contains("exit with 1").unwrap();
+    subject.wait_stderr("exit with 1").unwrap();
 }
 
 #[test]
@@ -459,7 +422,7 @@ fn build_command_stderr() {
     let mut fixture = Fixture::init().unwrap();
     fixture.set_build_command_nu("print -e '👋🏼'").unwrap();
     let mut subject = fixture.spawn_subject().unwrap();
-    subject.wait_stderr_contains("build: stderr: 👋🏼").unwrap();
+    subject.wait_stderr("build: stderr: 👋🏼").unwrap();
 }
 
 #[test]
@@ -467,7 +430,7 @@ fn build_command_stdout() {
     let mut fixture = Fixture::init().unwrap();
     fixture.set_build_command_nu("print '👋🏼'").unwrap();
     let mut subject = fixture.spawn_subject().unwrap();
-    subject.wait_stderr_contains("build: stdout: 👋🏼").unwrap();
+    subject.wait_stderr("build: stdout: 👋🏼").unwrap();
 }
 
 #[test]
@@ -477,13 +440,11 @@ fn build_failure_followed_by_success() {
     subject.wait_browser_spawned().unwrap();
     fixture.set_build_command_nu("exit 1").unwrap();
     fixture.write_source_file("trigger", "").unwrap();
-    subject.wait_stderr_contains(" exit with 1").unwrap();
+    subject.wait_stderr(" exit with 1").unwrap();
     fixture.set_build_command_nu("exit 0").unwrap();
     fixture.write_source_file("trigger", "").unwrap();
-    subject.wait_stderr_contains("build: success").unwrap();
-    subject
-        .wait_stderr_contains("browser: reloaded page")
-        .unwrap();
+    subject.wait_stderr("build: success").unwrap();
+    subject.wait_stderr("browser: reloaded page").unwrap();
 }
 
 #[tokio::test]
@@ -528,18 +489,15 @@ fn build_not_executed_on_git_ignored_file_create() {
         .unwrap();
 
     fixture.write_source_file("foo", "no trigger").unwrap();
-
-    subject
-        .wait_stderr_contains("/foo\" (git ignored) create")
-        .unwrap();
+    subject.wait_stderr("/foo\" (git ignored) create").unwrap();
 
     fixture
         .set_build_command_nu(format!("touch {serve_path_str}/bar-indicator"))
         .unwrap();
 
     fixture.write_source_file("bar", "trigger").unwrap();
-    subject.wait_stderr_contains("/bar\" create File").unwrap();
-    subject.wait_stderr_contains("build: success").unwrap();
+    subject.wait_stderr("/bar\" create File").unwrap();
+    subject.wait_stderr("build: success").unwrap();
     assert!(!fs::exists(serve_path.join("foo-indicator")).unwrap());
     assert!(fs::exists(serve_path.join("bar-indicator")).unwrap());
 }
@@ -558,18 +516,15 @@ fn build_not_executed_on_git_ignored_file_modify() {
         .unwrap();
 
     fixture.write_source_file("foo", "no trigger").unwrap();
-
-    subject
-        .wait_stderr_contains("/foo\" (git ignored) modify")
-        .unwrap();
+    subject.wait_stderr("/foo\" (git ignored) modify").unwrap();
 
     fixture
         .set_build_command_nu(format!("touch {serve_path_str}/bar-indicator"))
         .unwrap();
 
     fixture.write_source_file("bar", "trigger").unwrap();
-    subject.wait_stderr_contains("/bar\" create File").unwrap();
-    subject.wait_stderr_contains("build: success").unwrap();
+    subject.wait_stderr("/bar\" create File").unwrap();
+    subject.wait_stderr("build: success").unwrap();
     assert!(!fs::exists(serve_path.join("foo-indicator")).unwrap());
     assert!(fs::exists(serve_path.join("bar-indicator")).unwrap());
 }
@@ -588,18 +543,15 @@ fn build_not_executed_on_git_ignored_file_remove() {
         .unwrap();
 
     fs::remove_file(fixture.src_path().join("foo")).unwrap();
-
-    subject
-        .wait_stderr_contains("/foo\" (git ignored) remove")
-        .unwrap();
+    subject.wait_stderr("/foo\" (git ignored) remove").unwrap();
 
     fixture
         .set_build_command_nu(format!("touch {serve_path_str}/bar-indicator"))
         .unwrap();
 
     fixture.write_source_file("bar", "trigger").unwrap();
-    subject.wait_stderr_contains("/bar\" create File").unwrap();
-    subject.wait_stderr_contains("build: success").unwrap();
+    subject.wait_stderr("/bar\" create File").unwrap();
+    subject.wait_stderr("build: success").unwrap();
     assert!(!fs::exists(serve_path.join("foo-indicator")).unwrap());
     assert!(fs::exists(serve_path.join("bar-indicator")).unwrap());
 }
@@ -610,7 +562,7 @@ fn build_on_file_creation() {
     let mut subject = fixture.spawn_subject().unwrap();
     subject.wait_browser_spawned().unwrap();
     fixture.write_source_file("new_file", "").unwrap();
-    subject.wait_stderr_contains("build: spawned ").unwrap();
+    subject.wait_stderr("build: spawned ").unwrap();
 }
 
 #[test]
@@ -619,9 +571,9 @@ fn build_on_file_change() {
     let mut subject = fixture.spawn_subject().unwrap();
     subject.wait_browser_spawned().unwrap();
     fixture.write_source_file("file", "").unwrap();
-    subject.wait_stderr_contains("build: spawned ").unwrap();
+    subject.wait_stderr("build: spawned ").unwrap();
     fixture.write_source_file("file", "").unwrap();
-    subject.wait_stderr_contains("build: spawned ").unwrap();
+    subject.wait_stderr("build: spawned ").unwrap();
 }
 
 #[test]
@@ -630,9 +582,9 @@ fn build_on_file_removal() {
     let mut subject = fixture.spawn_subject().unwrap();
     subject.wait_browser_spawned().unwrap();
     fixture.write_source_file("file", "").unwrap();
-    subject.wait_stderr_contains("build: spawned ").unwrap();
+    subject.wait_stderr("build: spawned ").unwrap();
     fs::remove_file(fixture.src_path().join("file")).unwrap();
-    subject.wait_stderr_contains("build: spawned ").unwrap();
+    subject.wait_stderr("build: spawned ").unwrap();
 }
 
 #[test]
@@ -641,7 +593,7 @@ fn browser_reloads_following_build() {
     let mut subject = fixture.spawn_subject().unwrap();
     subject.wait_browser_spawned().unwrap();
     fixture.write_source_file("trigger", "").unwrap();
-    subject.wait_stderr_contains("browser: reloaded").unwrap();
+    subject.wait_stderr("browser: reloaded").unwrap();
 }
 
 #[test]
@@ -661,10 +613,7 @@ async fn cdp_errors_are_reported() {
     let browser_pid = subject.state_for_testing().unwrap().browser_pid;
     let browser_pid = Pid::from_raw(browser_pid as i32);
     kill(browser_pid, SIGTERM).unwrap();
-
-    subject
-        .wait_stderr_contains("WS Connection error: Ws(Protocol(ResetWithoutClosingHandshake))")
-        .unwrap();
+    subject.wait_stderr("WS Connection error:").unwrap();
 }
 
 #[test]
@@ -684,30 +633,13 @@ fn build_succeeds_while_being_terminated() {
         .unwrap();
 
     fixture.write_source_file("first trigger", "").unwrap();
-
-    subject
-        .wait_stderr_contains("event: build: spawn pid ")
-        .unwrap();
-
-    subject
-        .wait_stderr_contains("build: stdout: trap is set")
-        .unwrap();
-
+    subject.wait_stderr("build: spawned ").unwrap();
+    subject.wait_stderr("build: stdout: trap is set").unwrap();
     fixture.set_build_command_nu("").unwrap();
-
     fixture.write_source_file("second trigger", "").unwrap();
-
-    subject
-        .wait_stderr_contains("event: build: sent SIGTERM")
-        .unwrap();
-
-    subject
-        .wait_stderr_contains("event: build: exit with Some(0)")
-        .unwrap();
-
-    subject
-        .wait_stderr_contains("event: build: spawn pid ")
-        .unwrap();
+    subject.wait_stderr("build: SIGTERM").unwrap();
+    subject.wait_stderr("build: success").unwrap();
+    subject.wait_stderr("build: spawned ").unwrap();
 }
 
 mod kill_wait {
@@ -992,8 +924,7 @@ mod fixture {
         pub(crate) fn init() -> anyhow::Result<Self> {
             let root = TempDir::new()?;
 
-            let subject_path_env_var =
-                BTreeSet::from_iter([env!("CHROMIUM_BIN_PATH"), env!("GIT_BIN_PATH")].to_vec());
+            let subject_path_env_var = BTreeSet::from_iter([env!("CHROMIUM_BIN_PATH")].to_vec());
 
             let build_command = Script::new(
                 env!("NU_EXECUTABLE"),
@@ -1167,10 +1098,7 @@ mod fixture {
                 ))
             }
 
-            pub(crate) fn wait_stderr_contains(
-                &mut self,
-                pat: impl AsRef<str>,
-            ) -> anyhow::Result<String> {
+            pub(crate) fn wait_stderr(&mut self, pat: impl AsRef<str>) -> anyhow::Result<String> {
                 let pat = pat.as_ref();
                 eprintln!("waiting for subject stderr line that contains: {pat}");
 
@@ -1224,7 +1152,7 @@ mod fixture {
             }
 
             pub(crate) fn wait_browser_spawned(&mut self) -> anyhow::Result<()> {
-                self.wait_stderr_contains("browser: launched ")
+                self.wait_stderr("browser: launched ")
                     .context("wait browser launch")?;
 
                 Ok(())

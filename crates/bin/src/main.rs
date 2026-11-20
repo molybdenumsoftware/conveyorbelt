@@ -6,6 +6,7 @@ mod common;
 mod fswatch;
 mod git;
 mod logging;
+mod serve_dir;
 mod server;
 mod signal;
 
@@ -29,7 +30,8 @@ use crate::{
     common::{StateForTesting, TESTING_MODE},
     fswatch::FsWatch,
     git::GitRepo,
-    server::{ServeDir, Server},
+    serve_dir::ServeDir,
+    server::Server,
 };
 
 #[tokio::main]
@@ -77,7 +79,7 @@ async fn main_loop(
 
     if std::env::var(TESTING_MODE).is_ok() {
         let state_for_testing = StateForTesting {
-            serve_path: serve_dir.path().to_path_buf(),
+            serve_path: serve_dir.to_path_buf(),
             serve_port,
             browser_debugging_address: browser.websocket_address().to_owned(),
             browser_pid: browser.pid(),

@@ -14,7 +14,7 @@ use tracing::info;
 
 use crate::{
     common::{ForStdoutputLine as _, SERVE_PATH},
-    server::ServeDir,
+    serve_dir::ServeDir,
 };
 
 #[derive(Debug)]
@@ -33,7 +33,7 @@ impl Build {
         let mut command = Command::new(command.0);
 
         command
-            .env(SERVE_PATH, serve_dir.path())
+            .env(SERVE_PATH, serve_dir.to_path_buf())
             .stdout(Stdio::piped())
             .stderr(Stdio::piped());
 
