@@ -29,10 +29,14 @@ version = "*"
 default-features = false
 version = "*"
 
+[workspace.dependencies.http]
+default-features = false
+version = "*"
+
 [workspace.dependencies.hyper]
 default-features = false
 features = ["http1", "server"]
-version = "0"
+version = "*"
 
 [workspace.dependencies.indoc]
 default-features = false

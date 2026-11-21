@@ -18,6 +18,7 @@ in
         "chromiumoxide"
         "futures"
         "git2"
+        "http"
         "indoc"
         "maud"
         "notify"
@@ -47,7 +48,7 @@ in
             "http1"
             "server"
           ];
-          version = "0";
+          version = "*";
         };
         nix.features = [ "signal" ];
         process-wrap = {
@@ -78,6 +79,7 @@ in
           "derive_more"
           "futures"
           "git2"
+          "http"
           "hyper"
           "indoc"
           "nix"

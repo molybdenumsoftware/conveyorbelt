@@ -5,6 +5,7 @@ use std::{
 };
 
 use anyhow::{Context as _, anyhow};
+use http::StatusCode;
 use static_web_server::{
     handler::{RequestHandler, RequestHandlerOpts},
     service::RouterService,
@@ -44,7 +45,7 @@ impl Server {
             accept_markdown: false,
             health: false,
             maintenance_mode: false,
-            maintenance_mode_status: http::StatusCode::SERVICE_UNAVAILABLE,
+            maintenance_mode_status: StatusCode::SERVICE_UNAVAILABLE,
             maintenance_mode_file: PathBuf::new(),
             advanced_opts: None,
             text_charset: true,

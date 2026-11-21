@@ -20,6 +20,9 @@ workspace = true
 [dependencies.git2]
 workspace = true
 
+[dependencies.http]
+workspace = true
+
 [dependencies.hyper]
 workspace = true
 
