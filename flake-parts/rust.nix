@@ -43,8 +43,7 @@
 
           files.file = {
             "Cargo.toml".source = pkgs.writers.writeTOML "Cargo.toml" config.workspaceManifest;
-            "crates/bin/Cargo.toml".source =
-             pkgs.writers.writeTOML "Cargo.toml" config.binManifest;
+            "crates/bin/Cargo.toml".source = pkgs.writers.writeTOML "Cargo.toml" config.binManifest;
           };
 
           make-shells.default = {
