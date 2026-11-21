@@ -1,11 +1,10 @@
 use std::{
     net::{IpAddr, Ipv4Addr, SocketAddr, TcpListener},
     path::PathBuf,
-    sync::Arc,
+    sync::{Arc, atomic::AtomicBool},
 };
 
 use anyhow::{Context as _, anyhow};
-use hyper::StatusCode;
 use static_web_server::{
     handler::{RequestHandler, RequestHandlerOpts},
     service::RouterService,
@@ -42,16 +41,20 @@ impl Server {
             log_forwarded_for: false,
             trusted_proxies: Vec::new(),
             redirect_trailing_slash: false,
-            ignore_hidden_files: true,
-            disable_symlinks: true,
             accept_markdown: false,
             health: false,
             maintenance_mode: false,
-            maintenance_mode_status: StatusCode::SERVICE_UNAVAILABLE,
+            maintenance_mode_status: http::StatusCode::SERVICE_UNAVAILABLE,
             maintenance_mode_file: PathBuf::new(),
             advanced_opts: None,
             text_charset: true,
             use_relative_root: false, // TODO use this to support receiving serve dir as an argument
+            hsts: false,
+            etag: true,
+            access_log_format: None,
+            include_hidden: false,
+            follow_symlinks: false,
+            shutting_down: Arc::new(AtomicBool::new(false)),
         };
 
         let address = SocketAddr::from((IpAddr::V4(Ipv4Addr::LOCALHOST), 0));
