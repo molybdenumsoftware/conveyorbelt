@@ -1,17 +1,21 @@
 use std::{
-    net::{IpAddr, Ipv4Addr, SocketAddr, TcpListener},
+    net::{IpAddr, Ipv4Addr, SocketAddr},
     path::PathBuf,
     sync::{Arc, atomic::AtomicBool},
 };
 
 use anyhow::{Context as _, anyhow};
+use futures::future::{
+    Either::{Left, Right},
+    select,
+};
 use http::StatusCode;
 use static_web_server::{
     handler::{RequestHandler, RequestHandlerOpts},
     service::RouterService,
 };
-use tokio::{sync::oneshot, task::JoinHandle};
-use tracing::info;
+use tokio::{net::TcpListener, sync::oneshot, task::JoinHandle};
+use tracing::{debug, info, warn};
 
 use crate::serve_dir::ServeDir;
 
@@ -19,8 +23,8 @@ use crate::serve_dir::ServeDir;
 #[display("server at {address}")]
 pub(crate) struct Server {
     address: SocketAddr,
-    shutdown_sender: oneshot::Sender<()>,
-    join: JoinHandle<hyper::Result<()>>,
+    shutdown_tx: oneshot::Sender<()>,
+    join: JoinHandle<()>,
 }
 
 // TODO pub(crate) vs. pub visibility throughout project
@@ -59,30 +63,55 @@ impl Server {
         };
 
         let address = SocketAddr::from((IpAddr::V4(Ipv4Addr::LOCALHOST), 0));
-        let listener = TcpListener::bind(address).with_context(|| format!("bind to {address}"))?;
 
-        listener
-            .set_nonblocking(true)
-            .with_context(|| format!("set TCP stream non-blocking for listener {listener:?}"))?;
+        let listener = TcpListener::bind(address)
+            .await
+            .with_context(|| format!("bind to {address}"))?;
 
-        let failed_to_create_server_msg = format!("create hyper server from listener {listener:?}");
+        let server =
+            hyper_util::server::conn::auto::Builder::new(hyper_util::rt::TokioExecutor::new());
 
+        let graceful = hyper_util::server::graceful::GracefulShutdown::new();
         let address = listener.local_addr().context("get listener address")?;
-        let (shutdown_sender, shutdown_signal) = oneshot::channel();
-        let server_task = hyper_util::server::conn::auto::Builder::new()
-            .context(failed_to_create_server_msg)?
-            .tcp_nodelay(true)
-            .serve(RouterService::new(RequestHandler {
-                opts: Arc::from(handler_opts),
-            }))
-            .with_graceful_shutdown(async move {
-                shutdown_signal
-                    .await
-                    .expect("sender is supposed to be open");
-            });
+
+        let router_service = RouterService::new(RequestHandler {
+            opts: Arc::from(handler_opts),
+        });
+
+        let (shutdown_tx, mut shutdown_rx) = oneshot::channel();
+
+        let server_loop = async move {
+            loop {
+                let accept = Box::pin(listener.accept());
+                let shutdown = Box::pin(&mut shutdown_rx);
+                let (stream, peer_addr) = match select(accept, shutdown).await {
+                    Left((Err(e), _)) => {
+                        warn!("{e}");
+                        continue;
+                    }
+                    Left((Ok(conn), _)) => conn,
+                    Right((_shutdown, _)) => {
+                        debug!("listener dropped");
+                        break;
+                    }
+                };
+
+                debug!("accept from {peer_addr}");
+                let stream = hyper_util::rt::TokioIo::new(Box::pin(stream));
+                let conn = server.serve_connection(stream, router_service.build(Some(peer_addr)));
+                let conn = graceful.watch(conn.into_owned());
+
+                tokio::spawn(async move {
+                    if let Err(e) = conn.await {
+                        warn!("connection error: {e}");
+                    };
+                    debug!("connection dropped {peer_addr}");
+                });
+            }
+        };
 
         let join = tokio::spawn(async move {
-            let result = server_task.await;
+            let result = server_loop.await;
             drop(dir);
             result
         });
@@ -91,20 +120,17 @@ impl Server {
 
         Ok(Self {
             address,
-            shutdown_sender,
+            shutdown_tx,
             join,
         })
     }
 
     pub async fn shutdown(self) -> anyhow::Result<()> {
-        self.shutdown_sender
+        self.shutdown_tx
             .send(())
             .map_err(|()| anyhow!("send shutdown message"))?;
 
-        self.join
-            .await
-            .context("server task join")?
-            .context("server shut down")?;
+        self.join.await.context("server task join")?;
 
         info!("server shut down");
         Ok(())
