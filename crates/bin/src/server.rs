@@ -50,6 +50,8 @@ impl Server {
             maintenance_mode_status: StatusCode::SERVICE_UNAVAILABLE,
             maintenance_mode_file: PathBuf::new(),
             advanced_opts: None,
+            text_charset: true,
+            use_relative_root: false, // TODO use this to support receiving serve dir as an argument
         };
 
         let address = SocketAddr::from((IpAddr::V4(Ipv4Addr::LOCALHOST), 0));
