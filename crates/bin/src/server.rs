@@ -90,10 +90,7 @@ impl Server {
                         continue;
                     }
                     Left((Ok(conn), _)) => conn,
-                    Right((_shutdown, _)) => {
-                        debug!("listener dropped");
-                        break;
-                    }
+                    Right((_shutdown, _)) => break,
                 };
 
                 debug!("accept from {peer_addr}");
