@@ -42,6 +42,7 @@
           ]
           |> lib.fileset.unions
           |> toSource;
+        pname = "cargo-deny";
       };
     };
 }

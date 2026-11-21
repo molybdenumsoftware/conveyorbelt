@@ -16,7 +16,7 @@ in
     in
     {
       treefmt.projectRootFile = path_;
-      files.file.${path_}.source = inputs.license;
+      files.file.${path_}.text = builtins.readFile inputs.license;
 
       treefmt.settings.global.excludes = [ path_ ];
     };

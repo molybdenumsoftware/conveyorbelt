@@ -21,7 +21,10 @@
 
     workspaceManifest.workspace = {
       resolver = "3";
-      package.edition = "2024";
+      package = {
+        edition = "2024";
+        version = "0.0.0";
+      };
     };
 
     perSystem =
