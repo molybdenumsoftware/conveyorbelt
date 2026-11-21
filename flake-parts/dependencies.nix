@@ -19,6 +19,7 @@ in
         "futures"
         "git2"
         "http"
+        "hyper-util"
         "indoc"
         "maud"
         "notify"
@@ -80,7 +81,9 @@ in
           "futures"
           "git2"
           "http"
+          # remove hyper as explicit?
           "hyper"
+          "hyper-util"
           "indoc"
           "nix"
           "notify"

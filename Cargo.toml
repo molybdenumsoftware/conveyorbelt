@@ -38,6 +38,10 @@ default-features = false
 features = ["http1", "server"]
 version = "*"
 
+[workspace.dependencies.hyper-util]
+default-features = false
+version = "*"
+
 [workspace.dependencies.indoc]
 default-features = false
 version = "*"

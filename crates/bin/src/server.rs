@@ -69,7 +69,7 @@ impl Server {
 
         let address = listener.local_addr().context("get listener address")?;
         let (shutdown_sender, shutdown_signal) = oneshot::channel();
-        let server_task = hyper::Server::from_tcp(listener)
+        let server_task = hyper_util::server::conn::auto::Builder::new()
             .context(failed_to_create_server_msg)?
             .tcp_nodelay(true)
             .serve(RouterService::new(RequestHandler {

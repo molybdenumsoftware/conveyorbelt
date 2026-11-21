@@ -403,6 +403,7 @@ dependencies = [
  "git2 0.21.0",
  "http",
  "hyper",
+ "hyper-util",
  "indoc",
  "maud",
  "nix",
