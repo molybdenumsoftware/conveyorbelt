@@ -81,7 +81,8 @@ impl Server {
 
         let server_loop = async move {
             loop {
-                let accept = Box::pin(listener.accept());
+                let accept =
+                    Box::pin(async { listener.accept().await.context("accept connection") });
                 let shutdown = Box::pin(&mut shutdown_rx);
                 let (stream, peer_addr) = match select(accept, shutdown).await {
                     Left((Err(e), _)) => {
@@ -96,6 +97,12 @@ impl Server {
                 };
 
                 debug!("accept from {peer_addr}");
+                if let Err(e) = stream
+                    .set_nodelay(true)
+                    .with_context(|| format!("enable TCP_NODELAY for steam with {peer_addr}"))
+                {
+                    warn!("{e}");
+                }
                 let stream = hyper_util::rt::TokioIo::new(Box::pin(stream));
                 let conn = server.serve_connection(stream, router_service.build(Some(peer_addr)));
                 let conn = graceful.watch(conn.into_owned());
