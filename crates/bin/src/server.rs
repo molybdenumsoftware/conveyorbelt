@@ -73,12 +73,11 @@ impl Server {
 
         let graceful = hyper_util::server::graceful::GracefulShutdown::new();
         let address = listener.local_addr().context("get listener address")?;
+        let (shutdown_tx, mut shutdown_rx) = oneshot::channel();
 
         let router_service = RouterService::new(RequestHandler {
             opts: Arc::from(handler_opts),
         });
-
-        let (shutdown_tx, mut shutdown_rx) = oneshot::channel();
 
         let server_loop = async move {
             loop {
@@ -111,9 +110,8 @@ impl Server {
         };
 
         let join = tokio::spawn(async move {
-            let result = server_loop.await;
+            server_loop.await;
             drop(dir);
-            result
         });
 
         info!("listening {address}");
