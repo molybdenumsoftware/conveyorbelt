@@ -23,7 +23,6 @@ in
         "notify"
         "serde"
         "serde_json"
-        "static-web-server"
         "static_init"
         "strip-ansi-escapes"
         "tempfile"
@@ -42,6 +41,7 @@ in
           "from"
           "from_str"
         ];
+        static-web-server.version = "3.0.0-beta.3";
         hyper = {
           features = [
             "http1"

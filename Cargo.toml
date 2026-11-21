@@ -18,15 +18,7 @@ version = "*"
 
 [workspace.dependencies.derive_more]
 default-features = false
-features = [
-  "as_ref",
-  "debug",
-  "deref",
-  "deref_mut",
-  "display",
-  "from",
-  "from_str",
-]
+features = ["as_ref", "debug", "deref", "deref_mut", "display", "from", "from_str"]
 version = "*"
 
 [workspace.dependencies.futures]
@@ -79,7 +71,7 @@ version = "*"
 
 [workspace.dependencies.static-web-server]
 default-features = false
-version = "*"
+version = "3.0.0-beta.3"
 
 [workspace.dependencies.static_init]
 default-features = false
