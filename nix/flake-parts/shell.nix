@@ -8,17 +8,17 @@
 
   perSystem = {pkgs, ...}: {
     make-shells.default = {
-      inputsFrom = [pkgs.conveyorbelt];
-
       env =
         pkgs.conveyorbelt.passthru.check.env
         // {
           RUST_SRC_PATH = "${pkgs.rustPlatform.rustLibSrc}";
         };
 
-      packages = [
-        pkgs.rust-analyzer
-        pkgs.rustfmt
+      packages = with pkgs; [
+        rust-analyzer
+        rustfmt
+        cargo
+        clippy
       ];
     };
   };

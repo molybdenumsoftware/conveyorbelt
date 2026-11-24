@@ -164,3 +164,8 @@ async fn main_loop(
         };
     }
 }
+
+fn _todo_use_clippy() {
+    // https://github.com/nix-community/crate2nix/issues/195
+    return;
+}
