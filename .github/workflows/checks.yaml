@@ -1,0 +1,50 @@
+name: checks
+
+on:
+  # push: {} # TODO they both seem to hang
+  workflow_call: {}
+
+jobs:
+  nix-flake-check:
+    strategy:
+      matrix:
+        runner:
+          # - macos-latest
+          - ubuntu-latest
+    name: ${{ matrix.runner }} nix flake check
+    runs-on: ${{ matrix.runner }}
+    steps:
+      - uses: actions/checkout@v7
+      - name: Install Nix
+        uses: nixbuild/nix-quick-install-action@v35
+        with:
+          nix_conf: |
+            keep-env-derivations = true
+            keep-outputs = true
+      - name: Set up Nix cache
+        uses: nix-community/cache-nix-action@v7
+        with:
+          primary-key: nix-${{ runner.os }}
+      - run: nix flake check --accept-flake-config
+
+  cargo-test:
+    strategy:
+      matrix:
+        runner:
+          # - macos-latest
+          - ubuntu-latest
+    name: ${{ matrix.runner }} cargo test
+    runs-on: ${{ matrix.runner }}
+    steps:
+      - uses: actions/checkout@v7
+      - name: Install Nix
+        uses: nixbuild/nix-quick-install-action@v35
+        with:
+          nix_conf: |
+            keep-env-derivations = true
+            keep-outputs = true
+      - name: Set up Nix cache
+        uses: nix-community/cache-nix-action@v7
+        with:
+          primary-key: nix-${{ runner.os }}
+      - run: nix develop --command cargo test
