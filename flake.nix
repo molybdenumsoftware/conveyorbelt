@@ -1,44 +1,41 @@
-# DO-NOT-EDIT. This file was auto-generated using github:vic/flake-file.
+# DO-NOT-EDIT. This file was auto-generated using github:denful/flake-file.
 # Use `nix run .#write-flake` to regenerate it.
 {
-  description = "A based web dev workflow; stack-agnostic, hand-coded, 🦀";
+  description = "This flake is for development purposes only. Please use the overlay.";
 
   outputs = inputs: import ./outputs.nix inputs;
 
   nixConfig = {
     abort-on-warn = true;
-    extra-experimental-features = [ "pipe-operators" ];
+    extra-experimental-features = ["pipe-operators"];
   };
 
   inputs = {
-    advisory-db = {
-      url = "github:rustsec/advisory-db";
+    files = {
+      url = "github:mightyiam/files";
       flake = false;
     };
-    crane.url = "github:ipetkov/crane";
-    files.url = "github:mightyiam/files";
-    flake-compat = {
-      url = "https://git.lix.systems/lix-project/flake-compat/archive/main.tar.gz";
+    flake-file.url = "github:denful/flake-file";
+    flake-parts.url = "github:hercules-ci/flake-parts";
+    import-tree = {
+      url = "github:vic/import-tree";
       flake = false;
     };
-    flake-file.url = "github:vic/flake-file";
-    flake-parts = {
-      url = "github:hercules-ci/flake-parts";
-      inputs.nixpkgs-lib.follows = "nixpkgs";
-    };
-    import-tree.url = "github:vic/import-tree";
     license = {
       url = "https://spdx.org/licenses/MIT.txt";
       flake = false;
     };
     make-shell = {
       url = "github:nicknovitski/make-shell";
-      inputs.flake-compat.follows = "";
+      flake = false;
     };
-    nixpkgs.url = "https://channels.nixos.org/nixpkgs-unstable/nixexprs.tar.xz";
+    nixpkgs = {
+      url = "https://channels.nixos.org/nixpkgs-unstable/nixexprs.tar.xz";
+      flake = false;
+    };
     treefmt-nix = {
       url = "github:numtide/treefmt-nix";
-      inputs.nixpkgs.follows = "nixpkgs";
+      flake = false;
     };
   };
 }

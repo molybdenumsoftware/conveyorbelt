@@ -4,7 +4,7 @@ use futures::future::BoxFuture;
 use serde::{Deserialize, Serialize};
 use tokio::io::AsyncBufReadExt as _;
 
-pub(crate) const SERVE_PATH: &str = env!("SERVE_PATH");
+pub(crate) const SERVE_PATH: &str = "SERVE_PATH";
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub(crate) struct StateForTesting {
@@ -16,7 +16,7 @@ pub(crate) struct StateForTesting {
 
 impl std::fmt::Display for StateForTesting {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        let string = serde_json::to_string(&self).unwrap();
+        let string = serde_json::to_string(&self).expect("seems to serialize I guess");
         write!(f, "{string}")
     }
 }
@@ -29,11 +29,11 @@ pub(crate) trait ForStdoutputLine {
     fn for_stderr_line(
         &mut self,
         f: impl (FnMut(&str) -> Self::FnReturn) + Send + 'static,
-    ) -> Option<Self::JoinHandle>;
+    ) -> Self::JoinHandle;
     fn for_stdout_line(
         &mut self,
         f: impl (FnMut(&str) -> Self::FnReturn) + Send + 'static,
-    ) -> Option<Self::JoinHandle>;
+    ) -> Self::JoinHandle;
 }
 
 impl ForStdoutputLine for std::process::Child {
@@ -42,33 +42,26 @@ impl ForStdoutputLine for std::process::Child {
     fn for_stderr_line(
         &mut self,
         mut f: impl (FnMut(&str) -> Self::FnReturn) + Send + 'static,
-    ) -> Option<Self::JoinHandle> {
-        let child_stderr = self.stderr.take()?;
+    ) -> Self::JoinHandle {
+        let child_stderr = self.stderr.take().expect("child has stderr handle");
         let mut child_stderr_lines = std::io::BufReader::new(child_stderr).lines();
 
-        let join_handle = std::thread::spawn(move || {
+        std::thread::spawn(move || {
             while let Some(Ok(line)) = child_stderr_lines.next() {
                 f(&line);
             }
-        });
-
-        Some(join_handle)
+        })
     }
 
-    fn for_stdout_line(
-        &mut self,
-        mut f: impl FnMut(&str) + Send + 'static,
-    ) -> Option<Self::JoinHandle> {
-        let child_stdout = self.stdout.take()?;
+    fn for_stdout_line(&mut self, mut f: impl FnMut(&str) + Send + 'static) -> Self::JoinHandle {
+        let child_stdout = self.stdout.take().expect("child has stdout handle");
         let mut child_stdout_lines = std::io::BufReader::new(child_stdout).lines();
 
-        let join_handle = std::thread::spawn(move || {
+        std::thread::spawn(move || {
             while let Some(Ok(line)) = child_stdout_lines.next() {
                 f(&line);
             }
-        });
-
-        Some(join_handle)
+        })
     }
 }
 
@@ -78,32 +71,28 @@ impl ForStdoutputLine for tokio::process::Child {
     fn for_stderr_line(
         &mut self,
         mut f: impl (FnMut(&str) -> Self::FnReturn) + Send + 'static,
-    ) -> Option<Self::JoinHandle> {
-        let child_stderr = self.stderr.take()?;
+    ) -> Self::JoinHandle {
+        let child_stderr = self.stderr.take().expect("child has stderr handle");
         let mut stderr_lines = tokio::io::BufReader::new(child_stderr).lines();
 
-        let join_handle = tokio::spawn(async move {
+        tokio::spawn(async move {
             while let Ok(Some(line)) = stderr_lines.next_line().await {
                 f(&line).await;
             }
-        });
-
-        Some(join_handle)
+        })
     }
 
     fn for_stdout_line(
         &mut self,
         mut f: impl (FnMut(&str) -> Self::FnReturn) + Send + 'static,
-    ) -> Option<Self::JoinHandle> {
-        let child_stdout = self.stdout.take()?;
+    ) -> Self::JoinHandle {
+        let child_stdout = self.stdout.take().expect("child has stdout handle");
         let mut stdout_lines = tokio::io::BufReader::new(child_stdout).lines();
 
-        let join_handle = tokio::spawn(async move {
+        tokio::spawn(async move {
             while let Ok(Some(line)) = stdout_lines.next_line().await {
                 f(&line).await;
             }
-        });
-
-        Some(join_handle)
+        })
     }
 }

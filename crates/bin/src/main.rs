@@ -1,99 +1,166 @@
-mod app;
+mod browser;
+mod build;
 mod cli;
 #[path = "../common.rs"]
 mod common;
-mod driver;
-mod logging;
-mod project_path;
+mod fswatch;
+mod git;
+mod serve_dir;
+mod server;
+mod signal;
+mod trace;
 
-use std::sync::Arc;
-
-use futures::{FutureExt as _, StreamExt};
-use rxrust::prelude::*;
-
-use crate::{
-    app::{App, Command, Control, Event},
-    cli::Args,
-    driver::{
-        browser::BrowserDriver,
-        build::BuildDriver,
-        fswatch::FsWatchDriver,
-        server::{ServeDir, ServerDriver},
-        signal::SignalDriver,
+use anyhow::Context;
+use futures::{
+    FutureExt,
+    future::{
+        BoxFuture,
+        Either::{Left, Right},
+        select,
     },
 };
+use nix::unistd::Pid;
+use tokio::task::JoinHandle;
+use tracing::{debug, warn};
 
-fn main() -> anyhow::Result<()> {
-    tokio::runtime::Builder::new_current_thread()
-        .enable_all()
-        .build_local(tokio::runtime::LocalOptions::default())?
-        .block_on(async_main())?;
+use crate::{
+    browser::Browser,
+    build::{Build, BuildCommandPath},
+    cli::Args,
+    common::{StateForTesting, TESTING_MODE},
+    fswatch::FsWatch,
+    git::GitRepo,
+    serve_dir::ServeDir,
+    server::Server,
+};
+
+#[tokio::main]
+async fn main() -> anyhow::Result<()> {
+    trace::init();
+    let Args { build_command } = crate::cli::parse();
+    let signal = signal::listen().context("listen on signals")?;
+    let serve_dir = ServeDir::create()?;
+
+    let server = Server::start(serve_dir.clone())
+        .await
+        .context("start server")?;
+
+    let main_loop = main_loop(
+        serve_dir.clone(),
+        server.port(),
+        server.address(),
+        build_command,
+    );
+
+    let result = match select(Box::pin(signal), Box::pin(main_loop)).await {
+        Left((_signal, _)) => Ok(()),
+        Right((result, _)) => result,
+    };
+
+    if let Err(e) = server.shutdown().await.context("server shutdown") {
+        warn!("{e}");
+    }
+
+    result?;
+    debug!("exiting with 0");
     Ok(())
 }
 
-async fn async_main() -> anyhow::Result<()> {
-    logging::init();
-    let Args { build_command } = crate::cli::parse();
+async fn main_loop(
+    serve_dir: ServeDir,
+    serve_port: u16,
+    serve_address: String,
+    build_command: BuildCommandPath,
+) -> anyhow::Result<()> {
+    let git_repo = GitRepo::resolve()?;
+    let mut fs_watch = FsWatch::init(git_repo).context("init fs watch")?;
 
-    // TODO driver?
-    let serve_dir = ServeDir::obtain()?;
-    // TODO driver?
-    let project_root = crate::project_path::resolve(&std::env::current_dir()?)?;
-
-    let (signal_events, signal_driver) = SignalDriver::new();
-    let (server_events, server_driver) = ServerDriver::new();
-    let (build_events, build_driver) = BuildDriver::new();
-    let (browser_events, browser_driver) = BrowserDriver::new();
-    let (fs_watch_events, fs_watch_driver) = FsWatchDriver::new();
-
-    let app = App {
-        project_root,
-        serve_dir: Arc::new(serve_dir),
-        build_command_path: build_command,
-    };
-
-    // TODO try to avoid having any `unreachable!` invocations
-
-    let input_events = Shared::merge_observables([
-        signal_events.map(Event::Signal).box_it(),
-        server_events.map(Event::Server).box_it(),
-        build_events.map(Event::Build).box_it(),
-        browser_events.map(Event::Browser).box_it(),
-        fs_watch_events.map(Event::Fs).box_it(),
-    ])
-    .box_it();
-
-    let exit_code = app
-        .run(input_events)
-        .map(move |control| match control {
-            Control::Command(command) => {
-                let future = match command {
-                    Command::Build(build_command) => build_driver.effect(build_command).boxed(),
-                    Command::Server(server_command) => server_driver.effect(server_command).boxed(),
-                    Command::Fs(fs_command) => fs_watch_driver.effect(fs_command).boxed(),
-                    Command::Browser(browser_command) => {
-                        browser_driver.effect(browser_command).boxed()
-                    }
-                    Command::Signal(signal_command) => signal_driver.effect(signal_command).boxed(),
-                };
-                async move {
-                    future.await;
-                    None
-                }
-                .boxed()
-            }
-            Control::Exit(code) => async move { Some(code) }.boxed(),
-        })
-        .flat_map(Shared::from_future)
-        .filter_map(|exit_code| exit_code)
-        // TODO why doesn't this work? rxrust bug?
-        // .first()
-        // .into_future()
-        .into_stream()
-        .next()
+    let mut browser = Browser::launch(&serve_address)
         .await
-        .unwrap()
-        .unwrap();
+        .context("launch browser")?;
 
-    std::process::exit(exit_code);
+    if std::env::var(TESTING_MODE).is_ok() {
+        let state_for_testing = StateForTesting {
+            serve_path: serve_dir.to_path_buf(),
+            serve_port,
+            browser_debugging_address: browser.websocket_address().to_owned(),
+            browser_pid: browser.pid(),
+        };
+        debug!("{state_for_testing:?}");
+        println!("{state_for_testing}");
+    }
+
+    enum State {
+        Idle,
+        Building(Pid, JoinHandle<anyhow::Result<bool>>),
+        Terminating(BoxFuture<'static, anyhow::Result<anyhow::Result<bool>>>),
+    }
+    use State::*;
+
+    let build = Build::spawn(serve_dir.clone(), build_command.clone())
+        .await
+        .context("spawn build")?;
+
+    let mut state = State::Building(
+        build.id,
+        tokio::spawn(async move { build.wait().await.context("wait build") }),
+    );
+    loop {
+        state = match state {
+            Idle => {
+                fs_watch.recv().await;
+                let build = Build::spawn(serve_dir.clone(), build_command.clone())
+                    .await
+                    .context("build spawn")?;
+
+                Building(
+                    build.id,
+                    tokio::spawn(async move { build.wait().await.context("build wait") }),
+                )
+            }
+            Building(pid, build_task) => {
+                match select(
+                    Box::pin(fs_watch.recv()),
+                    Box::pin(async move { build_task.await.context("join build task") }),
+                )
+                .await
+                {
+                    Left((_changes, build_task)) => {
+                        Build::terminate(pid);
+                        Terminating(build_task.boxed())
+                    }
+                    Right((join_result, _)) => {
+                        match join_result {
+                            Err(join_error) => warn!("{join_error}"),
+                            Ok(Err(wait_error)) => warn!("{wait_error}"),
+                            Ok(Ok(false)) => {}
+                            Ok(Ok(true)) => {
+                                browser.reload_page().await.context("reload page")?;
+                            }
+                        }
+                        Idle
+                    }
+                }
+            }
+            Terminating(build_task) => match select(Box::pin(fs_watch.recv()), build_task).await {
+                Left((_changes, build_task)) => Terminating(build_task),
+                Right((join_result, _)) => {
+                    match join_result {
+                        Err(join_error) => warn!("{join_error}"),
+                        Ok(Err(wait_error)) => warn!("{wait_error}"),
+                        Ok(Ok(false | true)) => {}
+                    }
+
+                    let build = Build::spawn(serve_dir.clone(), build_command.clone())
+                        .await
+                        .context("build spawn")?;
+
+                    Building(
+                        build.id,
+                        tokio::spawn(async move { build.wait().await.context("build wait") }),
+                    )
+                }
+            },
+        };
+    }
 }

@@ -1,7 +1,3 @@
-[[bin]]
-name = "conveyorbelt"
-path = "src/main.rs"
-
 [dependencies.anyhow]
 workspace = true
 
@@ -9,9 +5,6 @@ workspace = true
 workspace = true
 
 [dependencies.clap]
-workspace = true
-
-[dependencies.ctrlc]
 workspace = true
 
 [dependencies.derive_more]
@@ -23,19 +16,19 @@ workspace = true
 [dependencies.git2]
 workspace = true
 
-[dependencies.hyper]
+[dependencies.http]
+workspace = true
+
+[dependencies.hyper-util]
+workspace = true
+
+[dependencies.indoc]
 workspace = true
 
 [dependencies.nix]
 workspace = true
 
 [dependencies.notify]
-workspace = true
-
-[dependencies.replace_with]
-workspace = true
-
-[dependencies.rxrust]
 workspace = true
 
 [dependencies.serde]
@@ -50,10 +43,10 @@ workspace = true
 [dependencies.tempfile]
 workspace = true
 
-[dependencies.tokio]
+[dependencies.time]
 workspace = true
 
-[dependencies.tokio-stream]
+[dependencies.tokio]
 workspace = true
 
 [dependencies.tracing]
@@ -71,12 +64,18 @@ workspace = true
 [dev-dependencies.static_init]
 workspace = true
 
+[dev-dependencies.strip-ansi-escapes]
+workspace = true
+
 [package]
-description = "A based web dev workflow; stack-agnostic, hand-coded, 🦀"
+description = "Web dev workflow; stack-agnostic, hand-coded 🦀"
 name = "conveyorbelt"
 
 [package.edition]
 workspace = true
 
 [package.license]
+workspace = true
+
+[package.version]
 workspace = true

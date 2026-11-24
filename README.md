@@ -1,6 +1,6 @@
 # conveyorbelt
 
-A based web dev workflow; stack-agnostic, hand-coded, 🦀
+Web dev workflow; stack-agnostic, hand-coded 🦀
 
 A CLI daemon that can:
 
@@ -22,7 +22,7 @@ A CLI daemon that can:
 $ conveyorbelt <build command>
 ```
 
-### Behavior summary
+### Behavior summary;
 
 A temporary directory *serve path* is created
 and its contents statically served at `http://localhost:<available port>/`.

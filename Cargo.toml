@@ -16,14 +16,9 @@ default-features = false
 features = ["derive"]
 version = "*"
 
-[workspace.dependencies.ctrlc]
-default-features = false
-features = ["termination"]
-version = "*"
-
 [workspace.dependencies.derive_more]
 default-features = false
-features = ["deref", "deref_mut", "display"]
+features = ["debug", "deref", "deref_mut", "display", "from_str"]
 version = "*"
 
 [workspace.dependencies.futures]
@@ -34,10 +29,13 @@ version = "*"
 default-features = false
 version = "*"
 
-[workspace.dependencies.hyper]
+[workspace.dependencies.http]
 default-features = false
-features = ["http1", "server"]
-version = "0"
+version = "*"
+
+[workspace.dependencies.hyper-util]
+default-features = false
+version = "*"
 
 [workspace.dependencies.indoc]
 default-features = false
@@ -54,6 +52,7 @@ version = "*"
 
 [workspace.dependencies.notify]
 default-features = false
+features = ["tokio", "macos_fsevent"]
 version = "*"
 
 [workspace.dependencies.process-wrap]
@@ -66,11 +65,6 @@ default-features = false
 features = ["std"]
 version = "*"
 
-[workspace.dependencies.rxrust]
-default-features = false
-features = ["scheduler"]
-version = "1.0.0-rc.3"
-
 [workspace.dependencies.serde]
 default-features = false
 version = "*"
@@ -81,9 +75,13 @@ version = "*"
 
 [workspace.dependencies.static-web-server]
 default-features = false
-version = "*"
+version = "3.0.0-beta.4"
 
 [workspace.dependencies.static_init]
+default-features = false
+version = "*"
+
+[workspace.dependencies.strip-ansi-escapes]
 default-features = false
 version = "*"
 
@@ -91,13 +89,14 @@ version = "*"
 default-features = false
 version = "*"
 
-[workspace.dependencies.tokio]
+[workspace.dependencies.time]
 default-features = false
-features = ["io-util", "process"]
+features = ["macros", "formatting"]
 version = "*"
 
-[workspace.dependencies.tokio-stream]
+[workspace.dependencies.tokio]
 default-features = false
+features = ["io-util", "macros", "process"]
 version = "*"
 
 [workspace.dependencies.tracing]
@@ -106,9 +105,10 @@ version = "*"
 
 [workspace.dependencies.tracing-subscriber]
 default-features = false
-features = ["env-filter"]
+features = ["env-filter", "local-time"]
 version = "*"
 
 [workspace.package]
 edition = "2024"
 license = "MIT"
+version = "0.0.0"
