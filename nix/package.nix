@@ -13,17 +13,19 @@
   writableTmpDirAsHomeHook,
 }:
 # TODO use buildRustCrate instead
-rustPlatform.buildRustPackage (finalAttrs: {
+rustPlatform.buildRustPackage (finalAttrs: let
+  root = ../.;
+in {
   pname = "conveyorbelt";
   __structuredAttrs = true;
-  inherit ((lib.importTOML (finalAttrs.passthru.projectRoot + "/Cargo.toml")).workspace.package) version;
-  cargoLock.lockFile = finalAttrs.passthru.projectRoot + "/Cargo.lock";
+  inherit ((lib.importTOML (finalAttrs.src.origSrc + "/Cargo.toml")).workspace.package) version;
+  cargoLock.lockFile = finalAttrs.src.origSrc + "/Cargo.lock";
 
   src = lib.fileset.toSource {
-    root = finalAttrs.passthru.projectRoot;
+    inherit root;
     fileset = lib.fileset.unions [
-      (lib.fileset.fileFilter (file: lib.elem file.name ["Cargo.toml" "Cargo.lock"]) finalAttrs.passthru.projectRoot)
-      (lib.fileset.fileFilter (file: file.hasExt "rs") finalAttrs.passthru.projectRoot)
+      (lib.fileset.fileFilter (file: lib.elem file.name ["Cargo.toml" "Cargo.lock"]) root)
+      (lib.fileset.fileFilter (file: file.hasExt "rs") root)
     ];
   };
 
@@ -43,7 +45,6 @@ rustPlatform.buildRustPackage (finalAttrs: {
 
   passthru = {
     inherit (finalAttrs) pname;
-    projectRoot = ../.;
     check.env = {
       NU_EXECUTABLE = lib.getExe nushell;
       _BASH_EXECUTABLE = lib.getExe bash;
