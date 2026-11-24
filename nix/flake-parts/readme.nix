@@ -2,7 +2,7 @@
   # TODO SERVE_PATH
   perSystem = {pkgs, ...}: {
     files.file."README.md".text = ''
-      # ${pkgs.conveyorbelt.pname}
+      # ${pkgs.conveyorbelt.crateName}
 
       ${pkgs.conveyorbelt.meta.description}
 
@@ -23,7 +23,7 @@
       ### Invocation
 
       ```
-      $ ${pkgs.conveyorbelt.pname} <build command>
+      $ ${pkgs.conveyorbelt.crateName} <build command>
       ```
 
       ### Behavior summary;
@@ -46,7 +46,7 @@
       without regard to whether a build process had completed or merely made its first change.
       That design also lacks the convenience of automatic build command invocation.
 
-      Another difference is that ${pkgs.conveyorbelt.pname} controls the browser
+      Another difference is that ${pkgs.conveyorbelt.crateName} controls the browser
       using [Chrome DevTools Protocol](https://chromedevtools.github.io/devtools-protocol/)
       while the projects mentioned above use a WebSocket and JavaScript that is injected into the served page.
     '';

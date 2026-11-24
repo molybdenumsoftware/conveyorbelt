@@ -64,7 +64,7 @@
           package =
             lib.genAttrs ["edition" "license" "version"] (_: {workspace = true;})
             // {
-              name = pkgs.conveyorbelt.pname;
+              name = pkgs.conveyorbelt.crateName;
               inherit (pkgs.conveyorbelt.meta) description;
             };
           dependencies =
