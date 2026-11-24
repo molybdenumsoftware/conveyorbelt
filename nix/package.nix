@@ -55,10 +55,5 @@ rustPlatform.buildRustPackage (finalAttrs: {
     };
   };
 
-  meta = {
-    description = "Web dev workflow; stack-agnostic, hand-coded 🦀";
-    # reuse this fact by extracting `meta` to a file
-    license = lib.licenses.mit;
-    # TODO declare platforms and derive flake systems from them?
-  };
+  meta = import ./meta.nix lib;
 })

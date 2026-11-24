@@ -1,4 +1,11 @@
-{inputs, ...}: {
+{
+  lib,
+  rootPath,
+  inputs,
+  ...
+}: let
+  meta = import (rootPath + "/nix/meta.nix") lib;
+in {
   debug = true;
 
   flake-file = {
@@ -21,11 +28,7 @@
 
   imports = [inputs.flake-file.flakeModules.default];
 
-  systems = [
-    "x86_64-linux"
-    "aarch64-linux"
-    # "aarch64-darwin" # pull request welcome!
-  ];
+  systems = meta.platforms;
 
   perSystem = {pkgs, ...}: {
     checks.package = pkgs.conveyorbelt;
