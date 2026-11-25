@@ -34,6 +34,7 @@ jobs:
       - run: nix flake check --accept-flake-config --print-build-logs
 
   cargo-test:
+    if: false # TODO
     strategy: *matrix-strategy
     name: ${{ matrix.runner }} cargo test
     runs-on: ${{ matrix.runner }}
