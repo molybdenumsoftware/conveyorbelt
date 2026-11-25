@@ -1,7 +1,9 @@
 name: checks
 
 on:
-  # push: {} # TODO they both seem to hang
+  push:
+    branches:
+      - master
   workflow_call: {}
 
 jobs:
