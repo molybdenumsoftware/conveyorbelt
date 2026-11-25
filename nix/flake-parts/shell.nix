@@ -8,6 +8,10 @@
 
   perSystem = {pkgs, ...}: {
     make-shells.default = {
+      shellHook = ''
+        export SHELL="${pkgs.bashInteractive}/bin/bash"
+      '';
+
       env =
         pkgs.conveyorbelt.passthru.check.env
         // {
