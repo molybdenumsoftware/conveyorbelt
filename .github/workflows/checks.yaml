@@ -31,7 +31,7 @@ jobs:
         uses: nix-community/cache-nix-action@v7
         with:
           primary-key: nix-${{ runner.os }}
-      - run: nix flake check --accept-flake-config
+      - run: nix flake check --accept-flake-config --print-build-logs
 
   cargo-test:
     strategy: *matrix-strategy
