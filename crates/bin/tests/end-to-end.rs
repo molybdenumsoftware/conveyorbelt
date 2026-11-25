@@ -662,6 +662,7 @@ fn build_succeeds_while_being_terminated() {
 mod kill_wait {
     use std::process::ExitStatus;
 
+    use anyhow::Context;
     use nix::sys::signal::Signal;
 
     use crate::signalable::Signalable as _;
@@ -672,8 +673,10 @@ mod kill_wait {
 
     impl KillWait for std::process::Child {
         fn kill_wait(&mut self, signal: Signal) -> anyhow::Result<ExitStatus> {
-            self.signal(signal)?;
-            let status = self.wait()?;
+            let id = self.id();
+            self.signal(signal)
+                .with_context(|| format!("{signal} {id}"))?;
+            let status = self.wait().with_context(|| format!("wait {id}"))?;
             Ok(status)
         }
     }
@@ -682,6 +685,7 @@ mod kill_wait {
 mod droppy_child {
     use anyhow::Context;
     use nix::sys::signal::Signal::SIGTERM;
+    use tracing::{info, warn};
 
     use crate::signalable::Signalable as _;
 
@@ -718,19 +722,20 @@ mod droppy_child {
                 .signal(SIGTERM)
                 .with_context(|| format!("SIGTERM {id} on drop"))
             {
-                eprintln!("{e}");
+                warn!("{e}");
                 return;
             }
             let Ok(status) = inner.wait() else { return };
             if status.success() {
                 return;
             }
-            eprintln!("{id} {status}")
+            info!("{id} {status}")
         }
     }
 }
 
 mod signalable {
+    use anyhow::Context;
     use nix::{sys::signal::Signal, unistd::Pid};
 
     pub(crate) trait Signalable {
@@ -740,7 +745,7 @@ mod signalable {
     impl Signalable for std::process::Child {
         fn signal(&self, signal: Signal) -> anyhow::Result<()> {
             let pid = Pid::from_raw(self.id() as i32);
-            nix::sys::signal::kill(pid, signal)?;
+            nix::sys::signal::kill(pid, signal).with_context(|| format!("{signal:?} {pid}"))?;
             Ok(())
         }
     }
@@ -751,6 +756,7 @@ mod weston {
 
     use anyhow::Context as _;
     use tempfile::TempDir;
+    use tracing::info;
 
     use crate::{common::ForStdoutputLine as _, droppy_child::DroppyChild};
 
@@ -767,14 +773,18 @@ mod weston {
 
         pub(crate) fn spawn() -> anyhow::Result<Self> {
             let socket_dir = TempDir::new().context("create temp dir")?;
-            let socket = socket_dir
-                .path()
+            let socket_dir_path = socket_dir.path();
+            info!("weston socket dir {socket_dir_path:?}");
+
+            let socket = socket_dir_path
                 .join("socket")
                 .to_str()
                 .context("socket path to str")?
                 .to_string();
 
-            let mut process = std::process::Command::new(env!("WESTON_EXECUTABLE"))
+            let mut command = std::process::Command::new(env!("WESTON_EXECUTABLE"));
+
+            command
                 .env_clear()
                 .args([
                     "--backend=headless",
@@ -783,16 +793,18 @@ mod weston {
                     &format!("--width={}", Self::WIDTH),
                 ])
                 .stdout(Stdio::piped())
-                .stderr(Stdio::piped())
-                .spawn()
-                .context("spawn weston")?;
+                .stderr(Stdio::piped());
+
+            info!("{command:?}");
+            let mut process = command.spawn().context("spawn weston")?;
+            info!("weston spawned {}", process.id());
 
             process.for_stdout_line(|line| {
-                eprintln!("weston stdout: {line}");
+                info!("weston stdout: {line}");
             });
 
             process.for_stderr_line(|line| {
-                eprintln!("weston stderr: {line}");
+                info!("weston stderr: {line}");
             });
 
             Ok(Self {
@@ -814,6 +826,7 @@ mod script {
     use anyhow::Context as _;
     use indoc::formatdoc;
     use tempfile::TempPath;
+    use tracing::info;
 
     #[derive(Debug, Clone)]
     pub(super) struct Script(pub(crate) String);
@@ -837,8 +850,9 @@ mod script {
                 .context("temporary build command file")?;
 
             temp_file.as_file_mut().write_all(self.0.as_bytes())?;
-
-            Ok(ScriptFile(temp_file.into_temp_path()))
+            let temp_path = temp_file.into_temp_path();
+            info!("wrote executable script {:?}", temp_path);
+            Ok(ScriptFile(temp_path))
         }
     }
 
@@ -849,6 +863,9 @@ mod script {
 mod dbus_session {
     use std::process::Stdio;
 
+    use anyhow::Context;
+    use tracing::info;
+
     use crate::{common::ForStdoutputLine as _, droppy_child::DroppyChild};
 
     #[derive(Debug)]
@@ -856,7 +873,9 @@ mod dbus_session {
 
     impl DBusSession {
         pub(crate) fn spawn() -> anyhow::Result<DBusSession> {
-            let mut process = std::process::Command::new(env!("DBUS_DAEMON_EXECUTABLE"))
+            let mut command = std::process::Command::new(env!("DBUS_DAEMON_EXECUTABLE"));
+
+            command
                 .env_clear()
                 .args([
                     "--nopidfile",
@@ -865,15 +884,18 @@ mod dbus_session {
                     env!("DBUS_SESSION_CONFIG_FILE"),
                 ])
                 .stdout(Stdio::piped())
-                .stderr(Stdio::piped())
-                .spawn()?;
+                .stderr(Stdio::piped());
+
+            info!("{command:?}");
+            let mut process = command.spawn().context("spawn dbus-daemon")?;
+            info!("dbus-daemon spawned {}", process.id());
 
             process.for_stderr_line(|line| {
-                eprintln!("dbus-daemon stderr: {line}");
+                info!("dbus-daemon stderr: {line}");
             });
 
             process.for_stdout_line(|line| {
-                eprintln!("dbus-daemon stdout: {line}");
+                info!("dbus-daemon stdout: {line}");
             });
 
             Ok(Self(DroppyChild::new(process)))
@@ -884,11 +906,12 @@ mod dbus_session {
 mod fresh_browser {
     use std::path::Path;
 
-    use anyhow::anyhow;
+    use anyhow::{Context, anyhow};
     use chromiumoxide::{Browser, BrowserConfig};
     use futures::StreamExt as _;
     use tempfile::TempDir;
     use tokio::task::JoinHandle;
+    use tracing::info;
 
     use crate::SHARED_ENVIRONMENT;
 
@@ -907,9 +930,12 @@ mod fresh_browser {
         pub(crate) async fn spawn() -> anyhow::Result<Self> {
             let data_dir = tempfile::Builder::new()
                 .prefix("chromium-data-dir-")
-                .tempdir()?;
+                .tempdir()
+                .context("create temp browser data dir")?;
 
-            let (browser, handler) = Browser::launch(
+            info!("browser data dir {:?}", data_dir.path());
+
+            let (mut browser, handler) = Browser::launch(
                 BrowserConfig::builder()
                     .chrome_executable(Path::new(env!("CHROMIUM_BIN_PATH")).join("chromium"))
                     .user_data_dir(data_dir.path())
@@ -918,9 +944,19 @@ mod fresh_browser {
                         SHARED_ENVIRONMENT.read().weston().socket(),
                     )
                     .build()
-                    .map_err(|e| anyhow!(e))?,
+                    .map_err(|e| anyhow!("build browser config: {e}"))?,
             )
-            .await?;
+            .await
+            .context("launch browser")?;
+
+            let pid = browser
+                .get_mut_child()
+                .context("get browser child")?
+                .inner
+                .id()
+                .context("get browser pid")?;
+
+            info!("browser launched {pid}",);
 
             let handler_task = tokio::spawn(async move {
                 handler.for_each(async |_| {}).await;
@@ -945,6 +981,7 @@ mod fixture {
     use anyhow::{Context as _, bail};
     use indoc::formatdoc;
     use tempfile::TempDir;
+    use tracing::info;
 
     use crate::common::{ForStdoutputLine as _, SERVE_PATH, TESTING_MODE};
     use crate::fixture::subject::Subject;
@@ -961,7 +998,7 @@ mod fixture {
     impl Fixture {
         pub(crate) fn init() -> anyhow::Result<Self> {
             let root = TempDir::new().context("create fixture dir")?;
-            eprintln!("fixture {root:?}");
+            info!("fixture {:?}", root.path());
             let subject_path_env_var = BTreeSet::from_iter([env!("CHROMIUM_BIN_PATH")].to_vec());
 
             let build_command = Script::new(
@@ -975,7 +1012,9 @@ mod fixture {
             "#},
             )
             .into_executable()
-            .context("into executable")?;
+            .context("build command into executable")?;
+
+            info!("build command is {:?}", build_command.0);
 
             let mut git_init_command =
                 std::process::Command::new(Path::new(env!("GIT_BIN_PATH")).join("git"));
@@ -984,14 +1023,13 @@ mod fixture {
                 .current_dir(&root)
                 .args(["init", "--quiet"]);
 
-            let git_init_exit_status = git_init_command
-                .status()
-                .with_context(|| format!("failed to spawn: {git_init_command:?}"))?;
+            info!("{git_init_command:?}");
+            let git_init_exit_status = git_init_command.status().context("spawn git init")?;
 
             if !git_init_exit_status.success() {
                 bail!("exited with {git_init_exit_status}: {git_init_command:?}");
             }
-            eprintln!("git repo initialized");
+            info!("git init success");
 
             let fixture = Self {
                 root,
@@ -999,7 +1037,10 @@ mod fixture {
                 build_command,
             };
 
-            fs::create_dir(fixture.src_path()).context("create fixture source dir")?;
+            let source_path = fixture.src_path();
+            fs::create_dir(&source_path).context("create fixture source dir")?;
+            info!("created fixture source dir {source_path:?}");
+
             fixture
                 .write_source_file("index.html", HtmlPage::new().title("Default fixture title"))
                 .context("write default index.html")?;
@@ -1024,7 +1065,7 @@ mod fixture {
                 Script::new(env!("NU_EXECUTABLE"), script.into()).0,
             )
             .context("write build command nu")?;
-            eprintln!("wrote build command (nu)");
+            info!("wrote build command (nu)");
             Ok(())
         }
 
@@ -1037,7 +1078,7 @@ mod fixture {
                 Script::new(env!("_BASH_EXECUTABLE"), script.into()).0,
             )
             .context("write build command bash")?;
-            eprintln!("wrote build command (bash)");
+            info!("wrote build command (bash)");
             Ok(())
         }
 
@@ -1049,7 +1090,7 @@ mod fixture {
             let path = path.as_ref();
             fs::write(self.src_path().join(path), content.to_bytes())
                 .context("write source file")?;
-            eprintln!("wrote source file {path:?}");
+            info!("wrote source file {path:?}");
             Ok(())
         }
 
@@ -1074,7 +1115,7 @@ mod fixture {
 
             match env::var(ENV_FILTER_VAR) {
                 Ok(log_filter) => {
-                    eprintln!("passing through `EnvFilter` {log_filter}");
+                    info!("passing through `EnvFilter` {log_filter}");
                     command.env(ENV_FILTER_VAR, log_filter);
                 }
                 Err(env::VarError::NotPresent) => {}
@@ -1084,14 +1125,14 @@ mod fixture {
             }
 
             command.stdout(Stdio::piped()).stderr(Stdio::piped());
-
-            let mut process = command.spawn().context("failed to spawn subject")?;
-            eprintln!("subject spawned {command:?}");
+            info!("{command:?}");
+            let mut process = command.spawn().context("spawn subject")?;
+            info!("subject spawned {}", process.id());
             let stderr = Arc::new(Mutex::new(String::new()));
             let stderr_clone = Arc::clone(&stderr);
 
             process.for_stderr_line(move |line| {
-                eprintln!("subject stderr: {line}");
+                info!("subject stderr: {line}");
                 let mut lock = stderr_clone.lock().unwrap();
                 lock.push_str(line);
                 lock.push('\n');
@@ -1115,6 +1156,7 @@ mod fixture {
         use anyhow::{Context as _, anyhow};
         use chromiumoxide::Browser;
         use futures::StreamExt as _;
+        use tracing::{info, warn};
 
         use crate::{common::StateForTesting, droppy_child::DroppyChild};
 
@@ -1129,14 +1171,21 @@ mod fixture {
 
         impl Subject {
             pub(crate) async fn connect_to_browser(&mut self) -> anyhow::Result<Browser> {
-                let state_for_testing = self.state_for_testing()?;
+                let state_for_testing =
+                    self.state_for_testing().context("read state for testing")?;
+
                 let (browser, handler) =
-                    Browser::connect(state_for_testing.browser_debugging_address).await?;
+                    Browser::connect(state_for_testing.browser_debugging_address)
+                        .await
+                        .context("connect to subject browser")?;
+
+                info!("connected to subject browser");
+
                 tokio::spawn(async move {
                     handler
                         .for_each(async |v| {
                             if let Err(e) = v {
-                                eprintln!("browser handler: {e}");
+                                warn!("browser handler: {e}");
                             }
                         })
                         .await;
@@ -1149,13 +1198,15 @@ mod fixture {
                 Ok(format!(
                     "http://{}:{}{path}",
                     Ipv4Addr::LOCALHOST,
-                    self.state_for_testing()?.serve_port
+                    self.state_for_testing()
+                        .context("read state for testing")?
+                        .serve_port
                 ))
             }
 
             pub(crate) fn wait_stderr(&mut self, pat: impl AsRef<str>) -> anyhow::Result<String> {
                 let pat = pat.as_ref();
-                eprintln!("waiting for subject stderr line that contains: {pat}");
+                info!("wait stderr line with: {pat}");
 
                 loop {
                     let mut stderr_lock = self.stderr.lock().map_err(|e| anyhow!("{e}"))?;
@@ -1181,7 +1232,8 @@ mod fixture {
             }
 
             pub(crate) fn wait_build_success(&mut self) -> anyhow::Result<()> {
-                self.wait_stderr("build: success")?;
+                self.wait_stderr("build: success")
+                    .context("wait build success")?;
                 Ok(())
             }
 
@@ -1194,7 +1246,7 @@ mod fixture {
                     .process
                     .stdout
                     .as_mut()
-                    .context("obtaining subject stdout mutable reference")?;
+                    .context("obtain subject stdout mutable reference")?;
 
                 let mut stdout_lines = std::io::BufReader::new(stdout).lines();
 
@@ -1205,8 +1257,9 @@ mod fixture {
                 };
 
                 let state_for_testing = serde_json::from_str(&line)
-                    .with_context(|| format!("failed to parse state for testing: {line:?}"))?;
+                    .with_context(|| format!("parse state for testing {line:?}"))?;
 
+                info!("{state_for_testing:?}");
                 let _ = self.state_for_testing.insert(state_for_testing);
                 Ok(self.state_for_testing.as_ref().unwrap().clone())
             }
@@ -1294,6 +1347,9 @@ mod to_bytes {
 }
 
 mod shared_environment {
+    use tracing::info;
+    use tracing_subscriber::fmt::time::UtcTime;
+
     use crate::{dbus_session::DBusSession, weston::Weston};
 
     #[derive(Debug)]
@@ -1304,10 +1360,22 @@ mod shared_environment {
 
     impl SharedEnvironment {
         pub(super) fn init() -> anyhow::Result<Self> {
-            Ok(Self {
+            tracing_subscriber::fmt()
+                .with_ansi_sanitization(false)
+                .with_target(false)
+                .with_level(false)
+                .with_timer(UtcTime::new(time::macros::format_description!(
+                    "[hour]:[minute]:[second].[subsecond digits:3]Z"
+                )))
+                .init();
+
+            let shared_environment = Self {
                 weston: Weston::spawn()?,
                 _dbus: DBusSession::spawn()?,
-            })
+            };
+
+            info!("shared environment initialized");
+            Ok(shared_environment)
         }
         pub(super) fn weston(&self) -> &Weston {
             &self.weston
