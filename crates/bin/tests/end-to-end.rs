@@ -1361,6 +1361,7 @@ mod shared_environment {
     impl SharedEnvironment {
         pub(super) fn init() -> anyhow::Result<Self> {
             tracing_subscriber::fmt()
+                .with_test_writer()
                 .with_ansi_sanitization(false)
                 .with_target(false)
                 .with_level(false)
