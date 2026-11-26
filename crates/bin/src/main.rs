@@ -36,8 +36,8 @@ use crate::{
 
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
-    trace::init();
     let Args { build_command } = crate::cli::parse();
+    trace::init();
     let signal = signal::listen().context("listen on signals")?;
     let serve_dir = ServeDir::create()?;
 
