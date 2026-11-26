@@ -939,6 +939,7 @@ mod fresh_browser {
                 BrowserConfig::builder()
                     .chrome_executable(Path::new(env!("CHROMIUM_BIN_PATH")).join("chromium"))
                     .user_data_dir(data_dir.path())
+                    .no_sandbox()
                     .env(
                         "WAYLAND_DISPLAY",
                         SHARED_ENVIRONMENT.read().weston().socket(),
