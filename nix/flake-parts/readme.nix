@@ -1,4 +1,4 @@
-{config, ...}: {
+{
   # TODO SERVE_PATH
   perSystem = {pkgs, ...}: {
     files.file."README.md".text = ''
