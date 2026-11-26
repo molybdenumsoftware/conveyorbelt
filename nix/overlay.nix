@@ -1,6 +1,6 @@
 final: prev: {
   crate2nix-tools = final.callPackage "${final.crate2nix.src}/tools.nix" {}; # IFD
-  conveyorbeltCargoNix = final.callPackage ./pkgs/package-cargo-nix.nix {};
-  conveyorbeltWorkspace = final.callPackage ./pkgs/workspace.nix {};
-  conveyorbelt = final.callPackage ./pkgs/package.nix {};
+  conveyorbeltCargoNix = final.callPackage ./pkgs/conveyorbelt-cargo-nix.nix {};
+  conveyorbeltWorkspace = final.callPackage ./pkgs/conveyorbelt-workspace.nix {};
+  conveyorbelt = final.callPackage ./pkgs/conveyorbelt.nix {};
 }
