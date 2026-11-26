@@ -2,39 +2,30 @@
 
 Web dev workflow; stack-agnostic, hand-coded 🦀
 
-A CLI daemon that can:
-
-- watch source
-- invoke arbitrary build command
-- statically serve
-- launch browser
-- trigger page reload
-- politely report what it's doing
-
 > [!CAUTION]
 > This software is not yet ready for use
 
 ## Usage
 
 ```
+A CLI daemon that can:
+
+- watch source - invoke arbitrary build command - statically serve - launch browser - trigger page reload - politely report what it's doing
+
+A temporary directory *serve path* is created and its contents statically served at `http://localhost:<available port>/`. A chromium browser is launched with that URL.
+
+On file changes the `<build command>` is invoked. The *build process* receives the *serve path* via the environment variable `SERVE_PATH`. When the *build process* exits successfully, the page reloads.
+
 Usage: conveyorbelt <BUILD_COMMAND>
 
 Arguments:
-  <BUILD_COMMAND>  The build command
+  <BUILD_COMMAND>
+          The build command
 
 Options:
-  -h, --help  Print help
+  -h, --help
+          Print help (see a summary with '-h')
 ```
-
-### Behavior summary;
-
-A temporary directory *serve path* is created
-and its contents statically served at `http://localhost:<available port>/`.
-A chromium browser is launched with that URL.
-
-On file changes the `<build command>` is invoked.
-The *build process* receives the *serve path* via the environment variable `SERVE_PATH`.
-When the *build process* exits successfully, the page reloads.
 
 ## Prior art
 
