@@ -9,37 +9,29 @@ on:
 
 jobs:
   nix-flake-check:
-    strategy: &matrix-strategy
+    strategy:
       matrix:
         runner:
           # - macos-latest
           - ubuntu-latest
-    name: ${{ matrix.runner }} nix flake check
+        task:
+          - name: flake check
+            command: nix flake check --accept-flake-config --print-build-logs
+          - name: dev shell cargo test
+            command: nix develop --command cargo test
+
+    name: ${{ matrix.runner }} ${{ matrix.task.name }}
     runs-on: ${{ matrix.runner }}
     steps:
-      - &checkout
-        uses: actions/checkout@v7
-      - &install-nix
-        name: Install Nix
+      - uses: actions/checkout@v7
+      - name: Install Nix
         uses: nixbuild/nix-quick-install-action@v35
         with:
           nix_conf: |
             keep-env-derivations = true
             keep-outputs = true
-      - &set-up-nix-cache
-        name: Set up Nix cache
+      - name: Set up Nix cache
         uses: nix-community/cache-nix-action@v7
         with:
           primary-key: nix-${{ runner.os }}
-      - run: nix flake check --accept-flake-config --print-build-logs
-
-  dev-shell-cargo-test:
-    if: false # TODO
-    strategy: *matrix-strategy
-    name: ${{ matrix.runner }} cargo test
-    runs-on: ${{ matrix.runner }}
-    steps:
-      - *checkout
-      - *install-nix
-      - *set-up-nix-cache
-      - run: nix develop --command cargo test
+      - run: ${{ matrix.task.command }}
