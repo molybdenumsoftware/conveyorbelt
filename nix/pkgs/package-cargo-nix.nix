@@ -2,7 +2,7 @@
   lib,
   crate2nix-tools,
 }: let
-  root = ../.;
+  root = ../..;
 in
   crate2nix-tools.generatedCargoNix {
     name = "conveyorbelt";

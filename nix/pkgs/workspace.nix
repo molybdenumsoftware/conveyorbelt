@@ -30,7 +30,7 @@ callPackage conveyorbeltCargoNix {
             dontStrip = true;
             extraRustcOpts = ["-Dwarnings" "-Wclippy::all"];
             passthru = {inherit check;};
-            meta = import ./meta.nix lib;
+            meta = import ../meta.nix lib;
           };
         };
     };
