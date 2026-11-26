@@ -16,10 +16,14 @@ A CLI daemon that can:
 
 ## Usage
 
-### Invocation
-
 ```
-$ conveyorbelt <build command>
+Usage: conveyorbelt <BUILD_COMMAND>
+
+Arguments:
+  <BUILD_COMMAND>  The build command
+
+Options:
+  -h, --help  Print help
 ```
 
 ### Behavior summary;

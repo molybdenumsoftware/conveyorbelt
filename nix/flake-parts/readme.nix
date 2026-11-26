@@ -1,7 +1,7 @@
 {
   # TODO SERVE_PATH
-  perSystem = {pkgs, ...}: {
-    files.file."README.md".text = ''
+  perSystem = {pkgs, ...}: let
+    template = ''
       # ${pkgs.conveyorbelt.crateName}
 
       ${pkgs.conveyorbelt.meta.description}
@@ -20,10 +20,8 @@
 
       ## Usage
 
-      ### Invocation
-
       ```
-      $ ${pkgs.conveyorbelt.crateName} <build command>
+      @cli_help@
       ```
 
       ### Behavior summary;
@@ -50,5 +48,15 @@
       using [Chrome DevTools Protocol](https://chromedevtools.github.io/devtools-protocol/)
       while the projects mentioned above use a WebSocket and JavaScript that is injected into the served page.
     '';
+  in {
+    files.file."README.md".source =
+      pkgs.runCommand "README.md" {
+        src = pkgs.writers.writeText "README.template.md" template;
+        nativeBuildInputs = [pkgs.conveyorbelt];
+      } ''
+        set -euo pipefail
+        cli_help=$(conveyorbelt --help)
+        substitute "$src" "$out" --replace-fail "@cli_help@" "$cli_help"
+      '';
   };
 }
