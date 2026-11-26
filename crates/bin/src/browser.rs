@@ -39,7 +39,7 @@ impl Browser {
             .port(0);
 
         if std::env::var(TESTING_MODE).is_ok() {
-            config = config.launch_timeout(Duration::from_mins(2));
+            config = config.launch_timeout(Duration::from_mins(2)).no_sandbox();
         }
 
         let config = config
