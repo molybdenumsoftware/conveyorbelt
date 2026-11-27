@@ -9,7 +9,7 @@
   perSystem = {pkgs, ...}: {
     make-shells.default = {
       env =
-        pkgs.conveyorbelt.passthru.check.env
+        pkgs.conveyorbeltShared.check.env
         // {
           RUST_SRC_PATH = "${pkgs.rustPlatform.rustLibSrc}";
         };
