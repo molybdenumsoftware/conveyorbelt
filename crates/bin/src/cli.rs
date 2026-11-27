@@ -20,6 +20,7 @@ use crate::build::BuildCommandPath;
         and its contents statically served at `http://localhost:<available port>/`.
         A chromium browser is launched with that URL.
 
+        Project files, as determined by git, as watched for changes.
         On file changes the `<build command>` is invoked.
         The *build process* receives the *serve path* via the environment variable `SERVE_PATH`.
         When the *build process* exits successfully, the page reloads.
