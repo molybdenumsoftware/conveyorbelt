@@ -1,4 +1,5 @@
 {
+  coreutils,
   lib,
   nushell,
   bash,
@@ -8,6 +9,7 @@
   ungoogled-chromium,
 }: {
   check.env = {
+    LN_EXECUTABLE = lib.getExe' coreutils "ln";
     NU_EXECUTABLE = lib.getExe nushell;
     _BASH_EXECUTABLE = lib.getExe bash;
     WESTON_EXECUTABLE = lib.getExe westonLite;

@@ -23,12 +23,17 @@ use nix::{
 };
 
 use crate::{
-    fixture::Fixture, fresh_browser::FreshBrowser, html_page::HtmlPage, kill_wait::KillWait as _,
-    shared_environment::SharedEnvironment, signalable::Signalable,
+    fixture::{Fixture, SRC_PATH},
+    fresh_browser::FreshBrowser,
+    html_page::HtmlPage,
+    kill_wait::KillWait as _,
+    shared_environment::SharedEnvironment,
+    signalable::Signalable,
 };
 
 const ENV_FILTER_VAR: &str = "LOG";
 const SERVE_PATH: &str = "result";
+const LN_EXECUTABLE: &str = env!("LN_EXECUTABLE");
 
 #[static_init::dynamic(drop)]
 static mut SHARED_ENVIRONMENT: SharedEnvironment = SharedEnvironment::init().unwrap();
@@ -654,6 +659,24 @@ fn build_succeeds_while_being_terminated() {
     subject.wait_stderr("build: spawned ").unwrap();
 }
 
+#[tokio::test]
+async fn symlink_serve_path() {
+    let mut fixture = Fixture::init().unwrap();
+
+    fixture
+        .set_build_command_nu(formatdoc! {"
+            {LN_EXECUTABLE} -s {SRC_PATH} {SERVE_PATH}
+        "})
+        .unwrap();
+
+    let mut subject = fixture.spawn_subject().unwrap();
+    subject.wait_build_success().unwrap();
+    let browser = FreshBrowser::spawn().await.unwrap();
+    let page = browser.new_page(subject.url("/").unwrap()).await.unwrap();
+    let title = page.get_title().await.unwrap().unwrap();
+    assert_eq!(title, "Default fixture title");
+}
+
 mod kill_wait {
     use std::process::ExitStatus;
 
@@ -993,7 +1016,7 @@ mod fixture {
         pub(crate) subject_path_env_var: BTreeSet<&'static str>,
     }
 
-    const SRC_PATH: &str = "src";
+    pub(super) const SRC_PATH: &str = "src";
 
     impl Fixture {
         pub(crate) fn init() -> anyhow::Result<Self> {
