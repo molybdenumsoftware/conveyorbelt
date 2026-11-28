@@ -1,9 +1,8 @@
 {lib, ...}: {
   config = {
     perSystem = psArgs @ {pkgs, ...}: {
-      options.manifests = {
-        workspace = lib.mkOption {type = lib.types.toml;};
-        bin = lib.mkOption {type = lib.types.toml;};
+      options.manifests = lib.mkOption {
+        type = lib.types.lazyAttrsOf lib.types.toml;
       };
 
       config = {
