@@ -1,5 +1,4 @@
 {
-  # TODO SERVE_PATH
   perSystem = {pkgs, ...}: let
     template = ''
       # ${pkgs.conveyorbelt.crateName}

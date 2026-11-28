@@ -2,7 +2,7 @@ use clap::Parser as _;
 use indoc::concatdoc;
 use tracing::debug;
 
-use crate::build::BuildCommandPath;
+use crate::{build::BuildCommandPath, serve_path::ServePath};
 
 #[derive(Debug, Clone, clap::Parser)]
 #[clap(
@@ -15,20 +15,18 @@ use crate::build::BuildCommandPath;
         - launch browser
         - trigger page reload
         - politely report what it's doing
-
-        A temporary directory *serve path* is created
-        and its contents statically served at `http://localhost:<available port>/`.
-        A chromium browser is launched with that URL.
-
-        Project files, as determined by git, are watched for changes.
-        On file changes the `<build command>` is invoked.
-        The *build process* receives the *serve path* via the environment variable `SERVE_PATH`.
-        When the *build process* exits successfully, the page reloads.
     "}
 )]
 pub(crate) struct Args {
-    /// The build command
+    /// Project files, as determined by git, are watched for changes.
+    /// On change, this command is invoked.
+    /// If that process exits successfully, the browser page is reloaded.
     pub(crate) build_command: BuildCommandPath,
+    /// Statically served at `http://localhost:<available port>/`.
+    /// Supposedly, this is where your build command writes to.
+    /// It is resolved at request time, so it may be re-created and may be a symlink.
+    /// A chromium browser is launched with that URL.
+    pub(crate) serve_path: ServePath,
 }
 
 pub(crate) fn parse() -> Args {

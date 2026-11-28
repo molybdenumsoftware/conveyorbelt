@@ -17,21 +17,15 @@ A CLI daemon that can:
 - trigger page reload
 - politely report what it's doing
 
-A temporary directory *serve path* is created
-and its contents statically served at `http://localhost:<available port>/`.
-A chromium browser is launched with that URL.
 
-Project files, as determined by git, are watched for changes.
-On file changes the `<build command>` is invoked.
-The *build process* receives the *serve path* via the environment variable `SERVE_PATH`.
-When the *build process* exits successfully, the page reloads.
-
-
-Usage: conveyorbelt <BUILD_COMMAND>
+Usage: conveyorbelt <BUILD_COMMAND> <SERVE_PATH>
 
 Arguments:
   <BUILD_COMMAND>
-          The build command
+          Project files, as determined by git, are watched for changes. On change, this command is invoked. If that process exits successfully, the browser page is reloaded
+
+  <SERVE_PATH>
+          Statically served at `http://localhost:<available port>/`. Supposedly, this is where your build command writes to. It is resolved at request time, so it may be re-created and may be a symlink. A chromium browser is launched with that URL
 
 Options:
   -h, --help

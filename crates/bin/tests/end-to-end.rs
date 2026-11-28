@@ -28,6 +28,7 @@ use crate::{
 };
 
 const ENV_FILTER_VAR: &str = "LOG";
+const SERVE_PATH: &str = "result";
 
 #[static_init::dynamic(drop)]
 static mut SHARED_ENVIRONMENT: SharedEnvironment = SharedEnvironment::init().unwrap();
@@ -488,12 +489,10 @@ fn build_not_executed_on_git_ignored_file_create() {
     let mut fixture = Fixture::init().unwrap();
     fixture.write_source_file(".gitignore", "/foo").unwrap();
     let mut subject = fixture.spawn_subject().unwrap();
-    let serve_path = &subject.state_for_testing().unwrap().serve_path;
-    let serve_path_str = serve_path.to_str().unwrap();
     subject.wait_build_success().unwrap();
 
     fixture
-        .set_build_command_nu(format!("touch {serve_path_str}/foo-indicator"))
+        .set_build_command_nu(format!("touch {SERVE_PATH}/foo-indicator"))
         .unwrap();
 
     fixture.write_source_file("foo", "no trigger").unwrap();
@@ -502,14 +501,14 @@ fn build_not_executed_on_git_ignored_file_create() {
         .unwrap();
 
     fixture
-        .set_build_command_nu(format!("touch {serve_path_str}/bar-indicator"))
+        .set_build_command_nu(format!("touch {SERVE_PATH}/bar-indicator"))
         .unwrap();
 
     fixture.write_source_file("bar", "trigger").unwrap();
     subject.wait_stderr("/bar").unwrap();
     subject.wait_build_success().unwrap();
-    assert!(!fs::exists(serve_path.join("foo-indicator")).unwrap());
-    assert!(fs::exists(serve_path.join("bar-indicator")).unwrap());
+    assert!(!fs::exists(fixture.root().join(SERVE_PATH).join("foo-indicator")).unwrap());
+    assert!(fs::exists(fixture.root().join(SERVE_PATH).join("bar-indicator")).unwrap());
 }
 
 #[test]
@@ -518,12 +517,10 @@ fn build_not_executed_on_git_ignored_file_modify() {
     fixture.write_source_file(".gitignore", "/foo").unwrap();
     fixture.write_source_file("foo", "create").unwrap();
     let mut subject = fixture.spawn_subject().unwrap();
-    let serve_path = &subject.state_for_testing().unwrap().serve_path;
-    let serve_path_str = serve_path.to_str().unwrap();
     subject.wait_build_success().unwrap();
 
     fixture
-        .set_build_command_nu(format!("touch {serve_path_str}/foo-indicator"))
+        .set_build_command_nu(format!("touch {SERVE_PATH}/foo-indicator"))
         .unwrap();
 
     fixture.write_source_file("foo", "no trigger").unwrap();
@@ -532,14 +529,14 @@ fn build_not_executed_on_git_ignored_file_modify() {
         .unwrap();
 
     fixture
-        .set_build_command_nu(format!("touch {serve_path_str}/bar-indicator"))
+        .set_build_command_nu(format!("touch {SERVE_PATH}/bar-indicator"))
         .unwrap();
 
     fixture.write_source_file("bar", "trigger").unwrap();
     subject.wait_stderr("/bar").unwrap();
     subject.wait_build_success().unwrap();
-    assert!(!fs::exists(serve_path.join("foo-indicator")).unwrap());
-    assert!(fs::exists(serve_path.join("bar-indicator")).unwrap());
+    assert!(!fs::exists(fixture.root().join(SERVE_PATH).join("foo-indicator")).unwrap());
+    assert!(fs::exists(fixture.root().join(SERVE_PATH).join("bar-indicator")).unwrap());
 }
 
 #[test]
@@ -548,12 +545,10 @@ fn build_not_executed_on_git_ignored_file_remove() {
     fixture.write_source_file(".gitignore", "/foo").unwrap();
     fixture.write_source_file("foo", "create").unwrap();
     let mut subject = fixture.spawn_subject().unwrap();
-    let serve_path = &subject.state_for_testing().unwrap().serve_path;
-    let serve_path_str = serve_path.to_str().unwrap();
     subject.wait_build_success().unwrap();
 
     fixture
-        .set_build_command_nu(format!("touch {serve_path_str}/foo-indicator"))
+        .set_build_command_nu(format!("touch {SERVE_PATH}/foo-indicator"))
         .unwrap();
 
     fs::remove_file(fixture.src_path().join("foo")).unwrap();
@@ -562,14 +557,14 @@ fn build_not_executed_on_git_ignored_file_remove() {
         .unwrap();
 
     fixture
-        .set_build_command_nu(format!("touch {serve_path_str}/bar-indicator"))
+        .set_build_command_nu(format!("touch {SERVE_PATH}/bar-indicator"))
         .unwrap();
 
     fixture.write_source_file("bar", "trigger").unwrap();
     subject.wait_stderr("/bar").unwrap();
     subject.wait_build_success().unwrap();
-    assert!(!fs::exists(serve_path.join("foo-indicator")).unwrap());
-    assert!(fs::exists(serve_path.join("bar-indicator")).unwrap());
+    assert!(!fs::exists(fixture.root().join(SERVE_PATH).join("foo-indicator")).unwrap());
+    assert!(fs::exists(fixture.root().join(SERVE_PATH).join("bar-indicator")).unwrap());
 }
 
 #[test]
@@ -617,9 +612,9 @@ fn browser_reloads_following_build() {
 fn serve_dir_exists_after_termination() {
     let fixture = Fixture::init().unwrap();
     let mut subject = fixture.spawn_subject().unwrap();
-    let state_for_testing = subject.state_for_testing().unwrap();
+    subject.wait_build_success().unwrap();
     subject.kill_wait(SIGTERM).unwrap();
-    assert!(std::fs::exists(state_for_testing.serve_path).unwrap())
+    assert!(std::fs::exists(fixture.root().join(SERVE_PATH)).unwrap())
 }
 
 #[test]
@@ -985,7 +980,8 @@ mod fixture {
     use tempfile::TempDir;
     use tracing::info;
 
-    use crate::common::{ForStdoutputLine as _, SERVE_PATH, TESTING_MODE};
+    use crate::SERVE_PATH;
+    use crate::common::{ForStdoutputLine as _, TESTING_MODE};
     use crate::fixture::subject::Subject;
     use crate::script::{Script, ScriptFile};
     use crate::to_bytes::ToBytes;
@@ -1004,15 +1000,17 @@ mod fixture {
             let root = TempDir::new().context("create fixture dir")?;
             info!("fixture {:?}", root.path());
             let subject_path_env_var = BTreeSet::from_iter([env!("CHROMIUM_BIN_PATH")].to_vec());
+            fs::write(root.path().join(".gitignore"), format!("{SERVE_PATH}\n"))
+                .context("write .gitignore")?;
 
             let build_command = Script::new(
                 env!("NU_EXECUTABLE"),
                 formatdoc! {r#"
-                if ($env.{SERVE_PATH} | path exists) {{
-                    rm --recursive $env.{SERVE_PATH}
+                if ("{SERVE_PATH}" | path exists) {{
+                    rm --recursive {SERVE_PATH}
                 }}
                 mkdir {SRC_PATH}
-                cp --verbose --recursive --preserve [mode, link] {SRC_PATH} $env.{SERVE_PATH}
+                cp --verbose --recursive --preserve [mode, link] {SRC_PATH} {SERVE_PATH}
             "#},
             )
             .into_executable()
@@ -1114,7 +1112,7 @@ mod fixture {
                     std::env::join_paths(&self.subject_path_env_var).unwrap(),
                 )
                 .env(ENV_FILTER_VAR, "warn,conveyorbelt=debug")
-                .arg(self.build_command.as_os_str());
+                .args([self.build_command.as_os_str(), SERVE_PATH.as_ref()]);
 
             match env::var(ENV_FILTER_VAR) {
                 Ok(log_filter) => {

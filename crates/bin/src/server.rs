@@ -17,7 +17,7 @@ use static_web_server::{
 use tokio::{net::TcpListener, sync::oneshot, task::JoinHandle};
 use tracing::{debug, info, warn};
 
-use crate::serve_dir::ServeDir;
+use crate::serve_path::ServePath;
 
 #[derive(Debug, derive_more::Display)]
 #[display("server at {address}")]
@@ -28,7 +28,7 @@ pub(crate) struct Server {
 }
 
 impl Server {
-    pub(crate) async fn start(dir: ServeDir) -> anyhow::Result<Self> {
+    pub(crate) async fn start(dir: ServePath) -> anyhow::Result<Self> {
         let handler_opts = RequestHandlerOpts {
             root_dir: dir.to_path_buf(),
             compression: false,

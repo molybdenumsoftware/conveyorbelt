@@ -12,10 +12,7 @@ use tokio::{
 };
 use tracing::{debug, info};
 
-use crate::{
-    common::{ForStdoutputLine as _, SERVE_PATH},
-    serve_dir::ServeDir,
-};
+use crate::common::ForStdoutputLine as _;
 
 #[derive(Debug)]
 pub(crate) struct Build {
@@ -30,18 +27,10 @@ pub(crate) struct Build {
 pub(crate) struct BuildCommandPath(PathBuf);
 
 impl Build {
-    pub(crate) async fn spawn(
-        serve_dir: ServeDir,
-        command: BuildCommandPath,
-    ) -> anyhow::Result<Self> {
+    pub(crate) async fn spawn(command: BuildCommandPath) -> anyhow::Result<Self> {
         debug!("spawning");
         let mut command = Command::new(command.0);
-
-        command
-            .env(SERVE_PATH, serve_dir.to_path_buf())
-            .stdout(Stdio::piped())
-            .stderr(Stdio::piped());
-
+        command.stdout(Stdio::piped()).stderr(Stdio::piped());
         let mut child = command.spawn().context("spawn command")?;
         let id = Pid::from_raw(child.id().context("get id")? as i32);
 

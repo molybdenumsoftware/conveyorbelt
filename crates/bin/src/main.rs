@@ -5,7 +5,7 @@ mod cli;
 mod common;
 mod fswatch;
 mod git;
-mod serve_dir;
+mod serve_path;
 mod server;
 mod signal;
 mod trace;
@@ -30,27 +30,20 @@ use crate::{
     common::{StateForTesting, TESTING_MODE},
     fswatch::FsWatch,
     git::GitRepo,
-    serve_dir::ServeDir,
     server::Server,
 };
 
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
-    let Args { build_command } = crate::cli::parse();
+    let Args {
+        build_command,
+        serve_path,
+    } = crate::cli::parse();
+
     trace::init();
     let signal = signal::listen().context("listen on signals")?;
-    let serve_dir = ServeDir::create()?;
-
-    let server = Server::start(serve_dir.clone())
-        .await
-        .context("start server")?;
-
-    let main_loop = main_loop(
-        serve_dir.clone(),
-        server.port(),
-        server.address(),
-        build_command,
-    );
+    let server = Server::start(serve_path).await.context("start server")?;
+    let main_loop = main_loop(server.port(), server.address(), build_command);
 
     let result = match select(Box::pin(signal), Box::pin(main_loop)).await {
         Left((_signal, _)) => Ok(()),
@@ -67,7 +60,6 @@ async fn main() -> anyhow::Result<()> {
 }
 
 async fn main_loop(
-    serve_dir: ServeDir,
     serve_port: u16,
     serve_address: String,
     build_command: BuildCommandPath,
@@ -81,7 +73,6 @@ async fn main_loop(
 
     if std::env::var(TESTING_MODE).is_ok() {
         let state_for_testing = StateForTesting {
-            serve_path: serve_dir.to_path_buf(),
             serve_port,
             browser_debugging_address: browser.websocket_address().to_owned(),
             browser_pid: browser.pid(),
@@ -97,7 +88,7 @@ async fn main_loop(
     }
     use State::*;
 
-    let build = Build::spawn(serve_dir.clone(), build_command.clone())
+    let build = Build::spawn(build_command.clone())
         .await
         .context("spawn build")?;
 
@@ -109,7 +100,7 @@ async fn main_loop(
         state = match state {
             Idle => {
                 fs_watch.recv().await;
-                let build = Build::spawn(serve_dir.clone(), build_command.clone())
+                let build = Build::spawn(build_command.clone())
                     .await
                     .context("build spawn")?;
 
@@ -151,7 +142,7 @@ async fn main_loop(
                         Ok(Ok(false | true)) => {}
                     }
 
-                    let build = Build::spawn(serve_dir.clone(), build_command.clone())
+                    let build = Build::spawn(build_command.clone())
                         .await
                         .context("build spawn")?;
 

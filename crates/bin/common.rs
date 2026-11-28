@@ -1,14 +1,11 @@
-use std::{io::BufRead as _, path::PathBuf};
+use std::io::BufRead as _;
 
 use futures::future::BoxFuture;
 use serde::{Deserialize, Serialize};
 use tokio::io::AsyncBufReadExt as _;
 
-pub(crate) const SERVE_PATH: &str = "SERVE_PATH";
-
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub(crate) struct StateForTesting {
-    pub(crate) serve_path: PathBuf,
     pub(crate) serve_port: u16,
     pub(crate) browser_pid: u32,
     pub(crate) browser_debugging_address: String,
