@@ -27,7 +27,6 @@ use crate::{
     fresh_browser::FreshBrowser,
     html_page::HtmlPage,
     shared_environment::SharedEnvironment,
-    signalable::Signalable,
 };
 
 const ENV_FILTER_VAR: &str = "LOG";
@@ -313,7 +312,7 @@ fn sigint() {
     let fixture = Fixture::init().unwrap();
     let mut subject = fixture.spawn_subject().unwrap();
     subject.wait_stderr("handling SIGINT & SIGTERM").unwrap();
-    subject.signal(SIGINT).unwrap();
+    kill(Pid::from_raw(subject.id() as i32), SIGINT).unwrap();
     subject.wait_stderr("received SIGINT").unwrap();
     let status = subject.wait().unwrap();
     assert_eq!(status.code(), Some(0));
@@ -324,7 +323,7 @@ fn sigterm() {
     let fixture = Fixture::init().unwrap();
     let mut subject = fixture.spawn_subject().unwrap();
     subject.wait_stderr("handling SIGINT & SIGTERM").unwrap();
-    subject.signal(SIGTERM).unwrap();
+    kill(Pid::from_raw(subject.id() as i32), SIGTERM).unwrap();
     subject.wait_stderr("received SIGTERM").unwrap();
     let status = subject.wait().unwrap();
     assert_eq!(status.code(), Some(0));
@@ -680,10 +679,11 @@ async fn symlink_serve_path() {
 
 mod droppy_child {
     use anyhow::Context;
-    use nix::sys::signal::Signal::SIGTERM;
+    use nix::{
+        sys::signal::{Signal::SIGTERM, kill},
+        unistd::Pid,
+    };
     use tracing::{info, warn};
-
-    use crate::signalable::Signalable as _;
 
     #[derive(Debug, derive_more::Deref, derive_more::DerefMut)]
     pub(crate) struct DroppyChild(std::process::Child);
@@ -697,9 +697,7 @@ mod droppy_child {
     impl Drop for DroppyChild {
         fn drop(&mut self) {
             let id = self.0.id();
-            if let Err(e) = self
-                .0
-                .signal(SIGTERM)
+            if let Err(e) = kill(Pid::from_raw(self.id() as i32), SIGTERM)
                 .with_context(|| format!("SIGTERM {id} on drop"))
             {
                 warn!("{e}");
@@ -710,23 +708,6 @@ mod droppy_child {
                 return;
             }
             info!("{id} {status}")
-        }
-    }
-}
-
-mod signalable {
-    use anyhow::Context;
-    use nix::{sys::signal::Signal, unistd::Pid};
-
-    pub(crate) trait Signalable {
-        fn signal(&self, signal: Signal) -> anyhow::Result<()>;
-    }
-
-    impl Signalable for std::process::Child {
-        fn signal(&self, signal: Signal) -> anyhow::Result<()> {
-            let pid = Pid::from_raw(self.id() as i32);
-            nix::sys::signal::kill(pid, signal).with_context(|| format!("{signal:?} {pid}"))?;
-            Ok(())
         }
     }
 }
