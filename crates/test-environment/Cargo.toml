@@ -1,0 +1,16 @@
+[package]
+name = "test-environment"
+[package.edition]
+workspace = true
+[package.license]
+workspace = true
+[package.version]
+workspace = true
+[dependencies]
+anyhow.workspace = true
+droppy-child.path = "../droppy-child"
+for-stdoutput-line.path = "../for-stdoutput-line"
+tempfile.workspace = true
+time.workspace = true
+tracing.workspace = true
+tracing-subscriber.workspace = true

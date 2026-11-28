@@ -18,11 +18,11 @@ use nix::{
     },
     unistd::Pid,
 };
+use test_environment::TestEnvironment;
 
 use crate::{
     fixture::{Fixture, SRC_PATH},
     html_page::HtmlPage,
-    shared_environment::SharedEnvironment,
 };
 
 const ENV_FILTER_VAR: &str = "LOG";
@@ -30,7 +30,7 @@ const SERVE_PATH: &str = "result";
 const LN_EXECUTABLE: &str = env!("LN_EXECUTABLE");
 
 #[static_init::dynamic(drop)]
-static mut SHARED_ENVIRONMENT: SharedEnvironment = SharedEnvironment::init().unwrap();
+static mut TEST_ENVIRONMENT: TestEnvironment = TestEnvironment::init().unwrap();
 
 #[tokio::test]
 async fn page_content_is_served() {
@@ -668,76 +668,6 @@ async fn symlink_serve_path() {
     assert_eq!(title, "Default fixture title");
 }
 
-mod weston {
-    use std::process::Stdio;
-
-    use anyhow::Context as _;
-    use droppy_child::DroppyChild;
-    use for_stdoutput_line::ForStdoutputLine as _;
-    use tempfile::TempDir;
-    use tracing::info;
-
-    #[derive(Debug)]
-    pub(super) struct Weston {
-        _socket_dir: TempDir,
-        socket: String,
-        _child: DroppyChild,
-    }
-
-    impl Weston {
-        const WIDTH: u16 = 1920;
-        const HEIGHT: u16 = 1080;
-
-        pub(crate) fn spawn(home: &TempDir) -> anyhow::Result<Self> {
-            let socket_dir = TempDir::new().context("create temp dir")?;
-            let socket_dir_path = socket_dir.path();
-            info!("weston socket dir {socket_dir_path:?}");
-
-            let socket = socket_dir_path
-                .join("socket")
-                .to_str()
-                .context("socket path to str")?
-                .to_string();
-
-            let mut command = std::process::Command::new(env!("WESTON_EXECUTABLE"));
-
-            command
-                .env_clear()
-                .args([
-                    "--backend=headless",
-                    &format!("--socket={}", socket),
-                    &format!("--height={}", Self::HEIGHT),
-                    &format!("--width={}", Self::WIDTH),
-                ])
-                .env("HOME", home.path())
-                .stdout(Stdio::piped())
-                .stderr(Stdio::piped());
-
-            info!("{command:?}");
-            let mut process = command.spawn().context("spawn weston")?;
-            info!("weston spawned {}", process.id());
-
-            process.for_stdout_line(|line| {
-                info!("weston stdout: {line}");
-            });
-
-            process.for_stderr_line(|line| {
-                info!("weston stderr: {line}");
-            });
-
-            Ok(Self {
-                _socket_dir: socket_dir,
-                socket,
-                _child: DroppyChild::new(process),
-            })
-        }
-
-        pub(crate) fn socket(&self) -> &str {
-            &self.socket
-        }
-    }
-}
-
 mod script {
     use std::{fs::Permissions, io::Write as _, os::unix::fs::PermissionsExt as _};
 
@@ -778,49 +708,6 @@ mod script {
     pub(super) struct ScriptFile(pub(crate) TempPath);
 }
 
-mod dbus_session {
-    use std::process::Stdio;
-
-    use anyhow::Context;
-    use droppy_child::DroppyChild;
-    use for_stdoutput_line::ForStdoutputLine as _;
-    use tracing::info;
-
-    #[derive(Debug)]
-    pub(super) struct DBusSession(#[allow(dead_code)] DroppyChild);
-
-    impl DBusSession {
-        pub(crate) fn spawn() -> anyhow::Result<DBusSession> {
-            let mut command = std::process::Command::new(env!("DBUS_DAEMON_EXECUTABLE"));
-
-            command
-                .env_clear()
-                .args([
-                    "--nopidfile",
-                    "--nofork",
-                    "--config-file",
-                    env!("DBUS_SESSION_CONFIG_FILE"),
-                ])
-                .stdout(Stdio::piped())
-                .stderr(Stdio::piped());
-
-            info!("{command:?}");
-            let mut process = command.spawn().context("spawn dbus-daemon")?;
-            info!("dbus-daemon spawned {}", process.id());
-
-            process.for_stderr_line(|line| {
-                info!("dbus-daemon stderr: {line}");
-            });
-
-            process.for_stdout_line(|line| {
-                info!("dbus-daemon stdout: {line}");
-            });
-
-            Ok(Self(DroppyChild::new(process)))
-        }
-    }
-}
-
 mod fixture {
     use std::collections::BTreeSet;
     use std::path::{Path, PathBuf};
@@ -839,7 +726,7 @@ mod fixture {
     use crate::fixture::subject::Subject;
     use crate::script::{Script, ScriptFile};
     use crate::to_bytes::ToBytes;
-    use crate::{ENV_FILTER_VAR, HtmlPage, SHARED_ENVIRONMENT};
+    use crate::{ENV_FILTER_VAR, HtmlPage, TEST_ENVIRONMENT};
 
     pub(super) struct Fixture {
         root: TempDir,
@@ -956,10 +843,7 @@ mod fixture {
             command
                 .current_dir(&self.root)
                 .env_clear()
-                .env(
-                    "WAYLAND_DISPLAY",
-                    SHARED_ENVIRONMENT.read().weston().socket(),
-                )
+                .env("WAYLAND_DISPLAY", TEST_ENVIRONMENT.read().weston().socket())
                 .env(TESTING_MODE, "true")
                 .env(
                     "PATH",
@@ -1197,50 +1081,6 @@ mod to_bytes {
     impl ToBytes for &str {
         fn to_bytes(self) -> Vec<u8> {
             self.as_bytes().to_vec()
-        }
-    }
-}
-
-mod shared_environment {
-    use anyhow::Context as _;
-    use tempfile::TempDir;
-    use tracing::info;
-    use tracing_subscriber::fmt::time::UtcTime;
-
-    use crate::{dbus_session::DBusSession, weston::Weston};
-
-    #[derive(Debug)]
-    pub(super) struct SharedEnvironment {
-        weston: Weston,
-        _dbus: DBusSession,
-        _home: TempDir,
-    }
-
-    impl SharedEnvironment {
-        pub(super) fn init() -> anyhow::Result<Self> {
-            tracing_subscriber::fmt()
-                .with_test_writer()
-                .with_ansi_sanitization(false)
-                .with_target(false)
-                .with_level(false)
-                .with_timer(UtcTime::new(time::macros::format_description!(
-                    "[hour]:[minute]:[second].[subsecond digits:3]Z"
-                )))
-                .init();
-
-            let home = TempDir::new().context("create temp home")?;
-
-            let shared_environment = Self {
-                weston: Weston::spawn(&home)?,
-                _dbus: DBusSession::spawn()?,
-                _home: home,
-            };
-
-            info!("shared environment initialized");
-            Ok(shared_environment)
-        }
-        pub(super) fn weston(&self) -> &Weston {
-            &self.weston
         }
     }
 }

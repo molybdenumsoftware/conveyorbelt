@@ -46,6 +46,8 @@ path = "../droppy-child"
 workspace = true
 [dev-dependencies.maud]
 workspace = true
+[dev-dependencies.test-environment]
+path = "../test-environment"
 [dev-dependencies.static_init]
 workspace = true
 [dev-dependencies.strip-ansi-escapes]

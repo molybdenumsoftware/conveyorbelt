@@ -16,8 +16,29 @@ callPackage conveyorbeltCargoNix {
             env.CARGO_NET_OFFLINE = true;
           };
 
+          test-environment = attrs: {
+            env = {
+              inherit
+                (conveyorbeltShared.check.env)
+                DBUS_DAEMON_EXECUTABLE
+                DBUS_SESSION_CONFIG_FILE
+                WESTON_EXECUTABLE
+                ;
+            };
+          };
+
           conveyorbelt = attrs: {
-            env = conveyorbeltShared.check.env // {CARGO_CRATE_NAME = attrs.crateName;};
+            env = {
+              CARGO_CRATE_NAME = attrs.crateName;
+              inherit
+                (conveyorbeltShared.check.env)
+                CHROMIUM_BIN_PATH
+                GIT_BIN_PATH
+                LN_EXECUTABLE
+                NU_EXECUTABLE
+                _BASH_EXECUTABLE
+                ;
+            };
             dontStrip = true;
             extraRustcOpts = ["-Dwarnings" "-Wclippy::all"];
             meta = import ../meta.nix lib;

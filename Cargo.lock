@@ -416,6 +416,7 @@ dependencies = [
  "static_init",
  "strip-ansi-escapes",
  "tempfile",
+ "test-environment",
  "time",
  "tokio",
  "tracing",
@@ -2082,6 +2083,19 @@ dependencies = [
  "once_cell",
  "rustix",
  "windows-sys",
+]
+
+[[package]]
+name = "test-environment"
+version = "0.0.0"
+dependencies = [
+ "anyhow",
+ "droppy-child",
+ "for-stdoutput-line",
+ "tempfile",
+ "time",
+ "tracing",
+ "tracing-subscriber",
 ]
 
 [[package]]
