@@ -677,6 +677,32 @@ async fn symlink_serve_path() {
     assert_eq!(title, "Default fixture title");
 }
 
+#[tokio::test]
+async fn build_command_arguments() {
+    let mut fixture = Fixture::init().unwrap();
+
+    fixture
+        .set_build_command_nu(formatdoc! {r#"
+            def main [foo: string] {{
+                mkdir {SERVE_PATH}
+                $foo | save $"{SERVE_PATH}/index.txt"
+            }}
+        "#})
+        .unwrap();
+
+    let mut subject = fixture
+        .spawn_subject_with_args(&["Dwight Schrute"])
+        .unwrap();
+    subject.wait_build_success().unwrap();
+    let browser = FreshBrowser::spawn().await.unwrap();
+    let page = browser
+        .new_page(subject.url("/index.txt").unwrap())
+        .await
+        .unwrap();
+    let content = page.content().await.unwrap();
+    assert_eq!(content, "Dwight Schrute");
+}
+
 mod kill_wait {
     use std::process::ExitStatus;
 
@@ -875,7 +901,7 @@ mod script {
         }
     }
 
-    #[derive(Debug, derive_more::Deref, derive_more::DerefMut)]
+    #[derive(Debug, derive_more::Deref)]
     pub(super) struct ScriptFile(pub(crate) TempPath);
 }
 
@@ -1120,7 +1146,24 @@ mod fixture {
         }
 
         pub(crate) fn spawn_subject(&self) -> anyhow::Result<Subject> {
+            self.spawn_subject_with_args(&[])
+        }
+
+        pub(crate) fn spawn_subject_with_args(
+            &self,
+            args: &[&'static str],
+        ) -> anyhow::Result<Subject> {
             let mut command = std::process::Command::new(env!("CARGO_BIN_EXE_conveyorbelt"));
+
+            let mut build_command = self
+                .build_command
+                .to_str()
+                .context("build command to str")?
+                .to_string();
+            for arg in args {
+                build_command.push(' ');
+                build_command.push_str(arg);
+            }
 
             command
                 .current_dir(&self.root)
@@ -1135,7 +1178,7 @@ mod fixture {
                     std::env::join_paths(&self.subject_path_env_var).unwrap(),
                 )
                 .env(ENV_FILTER_VAR, "warn,conveyorbelt=debug")
-                .args([self.build_command.as_os_str(), SERVE_PATH.as_ref()]);
+                .args([&build_command, SERVE_PATH]);
 
             match env::var(ENV_FILTER_VAR) {
                 Ok(log_filter) => {
