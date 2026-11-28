@@ -24,7 +24,6 @@ use nix::{
 
 use crate::{
     fixture::{Fixture, SRC_PATH},
-    fresh_browser::FreshBrowser,
     html_page::HtmlPage,
     shared_environment::SharedEnvironment,
 };
@@ -45,8 +44,8 @@ async fn page_content_is_served() {
         .unwrap();
 
     let mut subject = fixture.spawn_subject().unwrap();
+    let browser = subject.connect_to_browser().await.unwrap();
     subject.wait_build_success().unwrap();
-    let browser = FreshBrowser::spawn().await.unwrap();
 
     let title = browser
         .new_page(subject.url("/foo.html").unwrap())
@@ -67,7 +66,7 @@ async fn page_content_is_served() {
 async fn default_404_page() {
     let fixture = Fixture::init().unwrap();
     let mut subject = fixture.spawn_subject().unwrap();
-    let browser = FreshBrowser::spawn().await.unwrap();
+    let browser = subject.connect_to_browser().await.unwrap();
     let page = browser.new_page("about:blank").await.unwrap();
 
     let mut responses = page
@@ -149,7 +148,7 @@ async fn custom_404_page() {
     let mut subject = fixture.spawn_subject().unwrap();
     subject.wait_build_success().unwrap();
 
-    let browser = FreshBrowser::spawn().await.unwrap();
+    let browser = subject.connect_to_browser().await.unwrap();
     let page = browser.new_page("about:blank").await.unwrap();
 
     let mut responses = page
@@ -173,8 +172,8 @@ async fn html_extension_can_be_omitted() {
         .unwrap();
 
     let mut subject = fixture.spawn_subject().unwrap();
-    let browser = FreshBrowser::spawn().await.unwrap();
     subject.wait_build_success().unwrap();
+    let browser = subject.connect_to_browser().await.unwrap();
 
     let title = browser
         .new_page(subject.url("/foo").unwrap())
@@ -200,8 +199,8 @@ async fn index_html() {
         .unwrap();
 
     let mut subject = fixture.spawn_subject().unwrap();
-    let browser = FreshBrowser::spawn().await.unwrap();
     subject.wait_build_success().unwrap();
+    let browser = subject.connect_to_browser().await.unwrap();
 
     let title = browser
         .new_page(subject.url("/").unwrap())
@@ -231,7 +230,7 @@ async fn mime_types() {
         .unwrap();
 
     let mut subject = fixture.spawn_subject().unwrap();
-    let browser = FreshBrowser::spawn().await.unwrap();
+    let browser = subject.connect_to_browser().await.unwrap();
     let page = browser.new_page("about:blank").await.unwrap();
 
     let mut responses = page
@@ -263,7 +262,7 @@ async fn ignore_hidden_files() {
         .unwrap();
 
     let mut subject = fixture.spawn_subject().unwrap();
-    let browser = FreshBrowser::spawn().await.unwrap();
+    let browser = subject.connect_to_browser().await.unwrap();
     let page = browser.new_page("about:blank").await.unwrap();
 
     let mut responses = page
@@ -289,7 +288,7 @@ async fn forbid_symlinks() {
 
     symlink("real.html", fixture.src_path().join("symlink.html")).unwrap();
     let mut subject = fixture.spawn_subject().unwrap();
-    let browser = FreshBrowser::spawn().await.unwrap();
+    let browser = subject.connect_to_browser().await.unwrap();
     let page = browser.new_page("about:blank").await.unwrap();
 
     let mut responses = page
@@ -671,7 +670,7 @@ async fn symlink_serve_path() {
 
     let mut subject = fixture.spawn_subject().unwrap();
     subject.wait_build_success().unwrap();
-    let browser = FreshBrowser::spawn().await.unwrap();
+    let browser = subject.connect_to_browser().await.unwrap();
     let page = browser.new_page(subject.url("/").unwrap()).await.unwrap();
     let title = page.get_title().await.unwrap().unwrap();
     assert_eq!(title, "Default fixture title");
@@ -861,75 +860,6 @@ mod dbus_session {
             });
 
             Ok(Self(DroppyChild::new(process)))
-        }
-    }
-}
-
-mod fresh_browser {
-    use std::path::Path;
-
-    use anyhow::{Context, anyhow};
-    use chromiumoxide::{Browser, BrowserConfig};
-    use futures::StreamExt as _;
-    use tempfile::TempDir;
-    use tokio::task::JoinHandle;
-    use tracing::info;
-
-    use crate::SHARED_ENVIRONMENT;
-
-    #[derive(Debug, derive_more::Deref, derive_more::DerefMut)]
-    pub(super) struct FreshBrowser {
-        #[deref]
-        #[deref_mut]
-        instance: Browser,
-        _handler_task: Option<JoinHandle<()>>,
-        // If Browser still has open files then cleanup might fail.
-        // Waiting on AsyncDrop
-        _data_dir: TempDir,
-    }
-
-    impl FreshBrowser {
-        pub(crate) async fn spawn() -> anyhow::Result<Self> {
-            let data_dir = tempfile::Builder::new()
-                .prefix("chromium-data-dir-")
-                .tempdir()
-                .context("create temp browser data dir")?;
-
-            info!("browser data dir {:?}", data_dir.path());
-
-            let (mut browser, handler) = Browser::launch(
-                BrowserConfig::builder()
-                    .chrome_executable(Path::new(env!("CHROMIUM_BIN_PATH")).join("chromium"))
-                    .user_data_dir(data_dir.path())
-                    .no_sandbox()
-                    .env(
-                        "WAYLAND_DISPLAY",
-                        SHARED_ENVIRONMENT.read().weston().socket(),
-                    )
-                    .build()
-                    .map_err(|e| anyhow!("build browser config: {e}"))?,
-            )
-            .await
-            .context("launch browser")?;
-
-            let pid = browser
-                .get_mut_child()
-                .context("get browser child")?
-                .inner
-                .id()
-                .context("get browser pid")?;
-
-            info!("browser launched {pid}",);
-
-            let handler_task = tokio::spawn(async move {
-                handler.for_each(async |_| {}).await;
-            });
-
-            Ok(Self {
-                _data_dir: data_dir,
-                instance: browser,
-                _handler_task: Some(handler_task),
-            })
         }
     }
 }
