@@ -1,0 +1,13 @@
+[package]
+name = "droppy-child"
+[package.edition]
+workspace = true
+[package.license]
+workspace = true
+[package.version]
+workspace = true
+[dependencies]
+anyhow.workspace = true
+derive_more.workspace = true
+nix.workspace = true
+tracing.workspace = true

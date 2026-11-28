@@ -399,6 +399,7 @@ dependencies = [
  "chromiumoxide",
  "clap",
  "derive_more",
+ "droppy-child",
  "for-stdoutput-line",
  "futures",
  "git2 0.21.0",
@@ -515,6 +516,16 @@ dependencies = [
  "proc-macro2",
  "quote",
  "syn 3.0.10",
+]
+
+[[package]]
+name = "droppy-child"
+version = "0.0.0"
+dependencies = [
+ "anyhow",
+ "derive_more",
+ "nix",
+ "tracing",
 ]
 
 [[package]]

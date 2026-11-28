@@ -40,6 +40,8 @@ workspace = true
 workspace = true
 [dependencies.tracing-subscriber]
 workspace = true
+[dev-dependencies.droppy-child]
+path = "../droppy-child"
 [dev-dependencies.indoc]
 workspace = true
 [dev-dependencies.maud]

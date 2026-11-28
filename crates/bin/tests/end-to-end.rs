@@ -668,50 +668,14 @@ async fn symlink_serve_path() {
     assert_eq!(title, "Default fixture title");
 }
 
-mod droppy_child {
-    use anyhow::Context;
-    use nix::{
-        sys::signal::{Signal::SIGTERM, kill},
-        unistd::Pid,
-    };
-    use tracing::{info, warn};
-
-    #[derive(Debug, derive_more::Deref, derive_more::DerefMut)]
-    pub(crate) struct DroppyChild(std::process::Child);
-
-    impl DroppyChild {
-        pub(crate) fn new(child: std::process::Child) -> Self {
-            Self(child)
-        }
-    }
-
-    impl Drop for DroppyChild {
-        fn drop(&mut self) {
-            let id = self.0.id();
-            if let Err(e) = kill(Pid::from_raw(self.id() as i32), SIGTERM)
-                .with_context(|| format!("SIGTERM {id} on drop"))
-            {
-                warn!("{e}");
-                return;
-            }
-            let Ok(status) = self.0.wait() else { return };
-            if status.success() {
-                return;
-            }
-            info!("{id} {status}")
-        }
-    }
-}
-
 mod weston {
     use std::process::Stdio;
 
     use anyhow::Context as _;
+    use droppy_child::DroppyChild;
     use for_stdoutput_line::ForStdoutputLine as _;
     use tempfile::TempDir;
     use tracing::info;
-
-    use crate::droppy_child::DroppyChild;
 
     #[derive(Debug)]
     pub(super) struct Weston {
@@ -818,10 +782,9 @@ mod dbus_session {
     use std::process::Stdio;
 
     use anyhow::Context;
+    use droppy_child::DroppyChild;
     use for_stdoutput_line::ForStdoutputLine as _;
     use tracing::info;
-
-    use crate::droppy_child::DroppyChild;
 
     #[derive(Debug)]
     pub(super) struct DBusSession(#[allow(dead_code)] DroppyChild);
@@ -1047,11 +1010,10 @@ mod fixture {
 
         use anyhow::{Context as _, anyhow};
         use chromiumoxide::Browser;
+        use droppy_child::DroppyChild;
         use futures::StreamExt as _;
         use state_for_testing::StateForTesting;
         use tracing::{info, warn};
-
-        use crate::droppy_child::DroppyChild;
 
         #[derive(Debug, derive_more::Deref, derive_more::DerefMut)]
         pub(crate) struct Subject {
