@@ -771,7 +771,7 @@ mod weston {
         const WIDTH: u16 = 1920;
         const HEIGHT: u16 = 1080;
 
-        pub(crate) fn spawn() -> anyhow::Result<Self> {
+        pub(crate) fn spawn(home: &TempDir) -> anyhow::Result<Self> {
             let socket_dir = TempDir::new().context("create temp dir")?;
             let socket_dir_path = socket_dir.path();
             info!("weston socket dir {socket_dir_path:?}");
@@ -792,6 +792,7 @@ mod weston {
                     &format!("--height={}", Self::HEIGHT),
                     &format!("--width={}", Self::WIDTH),
                 ])
+                .env("HOME", home.path())
                 .stdout(Stdio::piped())
                 .stderr(Stdio::piped());
 
@@ -1348,6 +1349,8 @@ mod to_bytes {
 }
 
 mod shared_environment {
+    use anyhow::Context as _;
+    use tempfile::TempDir;
     use tracing::info;
     use tracing_subscriber::fmt::time::UtcTime;
 
@@ -1357,6 +1360,7 @@ mod shared_environment {
     pub(super) struct SharedEnvironment {
         weston: Weston,
         _dbus: DBusSession,
+        _home: TempDir,
     }
 
     impl SharedEnvironment {
@@ -1371,9 +1375,12 @@ mod shared_environment {
                 )))
                 .init();
 
+            let home = TempDir::new().context("create temp home")?;
+
             let shared_environment = Self {
-                weston: Weston::spawn()?,
+                weston: Weston::spawn(&home)?,
                 _dbus: DBusSession::spawn()?,
+                _home: home,
             };
 
             info!("shared environment initialized");
