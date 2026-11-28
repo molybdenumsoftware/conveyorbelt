@@ -997,6 +997,8 @@ mod fixture {
         pub(crate) subject_path_env_var: BTreeSet<&'static str>,
     }
 
+    const SRC_PATH: &str = "src";
+
     impl Fixture {
         pub(crate) fn init() -> anyhow::Result<Self> {
             let root = TempDir::new().context("create fixture dir")?;
@@ -1009,8 +1011,8 @@ mod fixture {
                 if ($env.{SERVE_PATH} | path exists) {{
                     rm --recursive $env.{SERVE_PATH}
                 }}
-                mkdir $env.SRC_PATH
-                cp --verbose --recursive --preserve [mode, link] $env.SRC_PATH $env.{SERVE_PATH}
+                mkdir {SRC_PATH}
+                cp --verbose --recursive --preserve [mode, link] {SRC_PATH} $env.{SERVE_PATH}
             "#},
             )
             .into_executable()
@@ -1111,7 +1113,6 @@ mod fixture {
                     "PATH",
                     std::env::join_paths(&self.subject_path_env_var).unwrap(),
                 )
-                .env("SRC_PATH", self.src_path())
                 .env(ENV_FILTER_VAR, "warn,conveyorbelt=debug")
                 .arg(self.build_command.as_os_str());
 
@@ -1144,7 +1145,7 @@ mod fixture {
         }
 
         pub(crate) fn src_path(&self) -> PathBuf {
-            self.root.path().join("src")
+            self.root.path().join(SRC_PATH)
         }
     }
 
