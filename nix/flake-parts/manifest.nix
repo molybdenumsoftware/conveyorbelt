@@ -6,13 +6,15 @@
       };
 
       config = {
-        files.file = {
-          "Cargo.toml".source = pkgs.writers.writeTOML "Cargo.toml" psArgs.config.manifests.workspace;
-          "crates/bin/Cargo.toml".source = pkgs.writers.writeTOML "Cargo.toml" psArgs.config.manifests.bin;
-        };
+        files.file =
+          psArgs.config.manifests
+          |> lib.mapAttrs' (path: content: {
+            name = "${path}/Cargo.toml" |> lib.removePrefix "/";
+            value.source = pkgs.writers.writeTOML "Cargo.toml" content;
+          });
 
         manifests = {
-          workspace = {
+          "" = {
             workspace = {
               package = {
                 edition = "2024";
@@ -60,7 +62,7 @@
             };
           };
 
-          bin = {
+          "crates/bin" = {
             package =
               lib.genAttrs ["edition" "license" "version"] (_: {workspace = true;})
               // {
