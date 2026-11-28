@@ -26,7 +26,6 @@ use crate::{
     fixture::{Fixture, SRC_PATH},
     fresh_browser::FreshBrowser,
     html_page::HtmlPage,
-    kill_wait::KillWait as _,
     shared_environment::SharedEnvironment,
     signalable::Signalable,
 };
@@ -94,7 +93,8 @@ async fn browser_orphaned() {
     let fixture = Fixture::init().unwrap();
     let mut subject = fixture.spawn_subject().unwrap();
     let browser = subject.connect_to_browser().await.unwrap();
-    subject.kill_wait(SIGTERM).unwrap();
+    kill(Pid::from_raw(subject.id() as i32), SIGTERM).unwrap();
+    subject.wait().unwrap();
     browser.new_page("about:blank").await.unwrap();
 }
 
@@ -618,7 +618,8 @@ fn serve_dir_exists_after_termination() {
     let fixture = Fixture::init().unwrap();
     let mut subject = fixture.spawn_subject().unwrap();
     subject.wait_build_success().unwrap();
-    subject.kill_wait(SIGTERM).unwrap();
+    kill(Pid::from_raw(subject.id() as i32), SIGTERM).unwrap();
+    subject.wait().unwrap();
     assert!(std::fs::exists(fixture.root().join(SERVE_PATH)).unwrap())
 }
 
@@ -675,29 +676,6 @@ async fn symlink_serve_path() {
     let page = browser.new_page(subject.url("/").unwrap()).await.unwrap();
     let title = page.get_title().await.unwrap().unwrap();
     assert_eq!(title, "Default fixture title");
-}
-
-mod kill_wait {
-    use std::process::ExitStatus;
-
-    use anyhow::Context;
-    use nix::sys::signal::Signal;
-
-    use crate::signalable::Signalable as _;
-
-    pub(crate) trait KillWait {
-        fn kill_wait(&mut self, signal: Signal) -> anyhow::Result<ExitStatus>;
-    }
-
-    impl KillWait for std::process::Child {
-        fn kill_wait(&mut self, signal: Signal) -> anyhow::Result<ExitStatus> {
-            let id = self.id();
-            self.signal(signal)
-                .with_context(|| format!("{signal} {id}"))?;
-            let status = self.wait().with_context(|| format!("wait {id}"))?;
-            Ok(status)
-        }
-    }
 }
 
 mod droppy_child {
