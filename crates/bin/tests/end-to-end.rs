@@ -685,43 +685,27 @@ mod droppy_child {
 
     use crate::signalable::Signalable as _;
 
-    #[derive(Debug)]
-    pub(crate) struct DroppyChild(Option<std::process::Child>);
+    #[derive(Debug, derive_more::Deref, derive_more::DerefMut)]
+    pub(crate) struct DroppyChild(std::process::Child);
 
     impl DroppyChild {
         pub(crate) fn new(child: std::process::Child) -> Self {
-            Self(Some(child))
-        }
-    }
-
-    impl std::ops::Deref for DroppyChild {
-        type Target = std::process::Child;
-
-        fn deref(&self) -> &Self::Target {
-            self.0.as_ref().unwrap()
-        }
-    }
-
-    impl std::ops::DerefMut for DroppyChild {
-        fn deref_mut(&mut self) -> &mut Self::Target {
-            self.0.as_mut().unwrap()
+            Self(child)
         }
     }
 
     impl Drop for DroppyChild {
         fn drop(&mut self) {
-            let Some(mut inner) = self.0.take() else {
-                return;
-            };
-            let id = inner.id();
-            if let Err(e) = inner
+            let id = self.0.id();
+            if let Err(e) = self
+                .0
                 .signal(SIGTERM)
                 .with_context(|| format!("SIGTERM {id} on drop"))
             {
                 warn!("{e}");
                 return;
             }
-            let Ok(status) = inner.wait() else { return };
+            let Ok(status) = self.0.wait() else { return };
             if status.success() {
                 return;
             }
