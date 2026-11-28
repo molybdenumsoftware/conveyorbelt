@@ -873,11 +873,12 @@ mod fixture {
 
     use anyhow::{Context as _, bail};
     use indoc::formatdoc;
+    use state_for_testing::TESTING_MODE;
     use tempfile::TempDir;
     use tracing::info;
 
     use crate::SERVE_PATH;
-    use crate::common::{ForStdoutputLine as _, TESTING_MODE};
+    use crate::common::ForStdoutputLine as _;
     use crate::fixture::subject::Subject;
     use crate::script::{Script, ScriptFile};
     use crate::to_bytes::ToBytes;
@@ -1053,9 +1054,10 @@ mod fixture {
         use anyhow::{Context as _, anyhow};
         use chromiumoxide::Browser;
         use futures::StreamExt as _;
+        use state_for_testing::StateForTesting;
         use tracing::{info, warn};
 
-        use crate::{common::StateForTesting, droppy_child::DroppyChild};
+        use crate::droppy_child::DroppyChild;
 
         #[derive(Debug, derive_more::Deref, derive_more::DerefMut)]
         pub(crate) struct Subject {

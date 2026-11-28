@@ -1,0 +1,11 @@
+[package]
+name = "state-for-testing"
+[package.edition]
+workspace = true
+[package.license]
+workspace = true
+[package.version]
+workspace = true
+[dependencies]
+serde.workspace = true
+serde_json.workspace = true

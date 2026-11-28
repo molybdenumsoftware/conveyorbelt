@@ -2,7 +2,7 @@
   conveyorbeltWorkspace,
   writableTmpDirAsHomeHook,
 }:
-conveyorbeltWorkspace.rootCrate.build.override {
+conveyorbeltWorkspace.workspaceMembers.conveyorbelt.build.override {
   runTests = true;
   testInputs = [writableTmpDirAsHomeHook];
 }

@@ -20,6 +20,7 @@ use futures::{
     },
 };
 use nix::unistd::Pid;
+use state_for_testing::{StateForTesting, TESTING_MODE};
 use tokio::task::JoinHandle;
 use tracing::{debug, warn};
 
@@ -27,7 +28,6 @@ use crate::{
     browser::Browser,
     build::{Build, BuildCommandPath},
     cli::Args,
-    common::{StateForTesting, TESTING_MODE},
     fswatch::FsWatch,
     git::GitRepo,
     server::Server,

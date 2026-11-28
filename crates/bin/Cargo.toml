@@ -24,6 +24,8 @@ workspace = true
 workspace = true
 [dependencies.serde_json]
 workspace = true
+[dependencies.state-for-testing]
+path = "../state-for-testing"
 [dependencies.static-web-server]
 workspace = true
 [dependencies.tempfile]

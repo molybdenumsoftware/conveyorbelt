@@ -6,10 +6,9 @@ use chromiumoxide::{
     cdp::browser_protocol::target::{CloseTargetParams, GetTargetsParams},
 };
 use futures::StreamExt as _;
+use state_for_testing::TESTING_MODE;
 use tempfile::tempdir;
 use tracing::{debug, info};
-
-use crate::common::TESTING_MODE;
 
 #[derive(Debug, derive_more::Display)]
 #[display("browser; pid: {pid}, websocket address: {websocket_address}")]

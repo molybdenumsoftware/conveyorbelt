@@ -1,24 +1,7 @@
 use std::io::BufRead as _;
 
 use futures::future::BoxFuture;
-use serde::{Deserialize, Serialize};
 use tokio::io::AsyncBufReadExt as _;
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub(crate) struct StateForTesting {
-    pub(crate) serve_port: u16,
-    pub(crate) browser_pid: u32,
-    pub(crate) browser_debugging_address: String,
-}
-
-impl std::fmt::Display for StateForTesting {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        let string = serde_json::to_string(&self).expect("seems to serialize I guess");
-        write!(f, "{string}")
-    }
-}
-
-pub(crate) const TESTING_MODE: &str = "_TESTING_MODE";
 
 pub(crate) trait ForStdoutputLine {
     type JoinHandle;
