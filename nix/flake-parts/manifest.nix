@@ -2,8 +2,8 @@
   config = {
     perSystem = psArgs @ {pkgs, ...}: {
       options.manifests = {
-        workspace = lib.mkOption {type = lib.types.anything;};
-        bin = lib.mkOption {type = lib.types.anything;};
+        workspace = lib.mkOption {type = lib.types.toml;};
+        bin = lib.mkOption {type = lib.types.toml;};
       };
 
       config = {
