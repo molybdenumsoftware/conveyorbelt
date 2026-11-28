@@ -6,6 +6,8 @@ workspace = true
 workspace = true
 [dependencies.derive_more]
 workspace = true
+[dependencies.for-stdoutput-line]
+path = "../for-stdoutput-line"
 [dependencies.futures]
 workspace = true
 [dependencies.git2]

@@ -3,7 +3,7 @@ use std::io::BufRead as _;
 use futures::future::BoxFuture;
 use tokio::io::AsyncBufReadExt as _;
 
-pub(crate) trait ForStdoutputLine {
+pub trait ForStdoutputLine {
     type JoinHandle;
     type FnReturn;
     fn for_stderr_line(

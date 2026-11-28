@@ -1,8 +1,6 @@
 mod browser;
 mod build;
 mod cli;
-#[path = "../common.rs"]
-mod common;
 mod fswatch;
 mod git;
 mod serve_path;

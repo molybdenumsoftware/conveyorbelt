@@ -1,6 +1,7 @@
 use std::{path::PathBuf, process::Stdio};
 
 use anyhow::{Context, Ok};
+use for_stdoutput_line::ForStdoutputLine as _;
 use futures::FutureExt;
 use nix::{
     sys::signal::{Signal::SIGTERM, kill},
@@ -11,8 +12,6 @@ use tokio::{
     task,
 };
 use tracing::{debug, info};
-
-use crate::common::ForStdoutputLine as _;
 
 #[derive(Debug)]
 pub(crate) struct Build {

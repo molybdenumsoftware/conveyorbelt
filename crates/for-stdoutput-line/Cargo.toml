@@ -1,0 +1,11 @@
+[package]
+name = "for-stdoutput-line"
+[package.edition]
+workspace = true
+[package.license]
+workspace = true
+[package.version]
+workspace = true
+[dependencies]
+futures.workspace = true
+tokio.workspace = true

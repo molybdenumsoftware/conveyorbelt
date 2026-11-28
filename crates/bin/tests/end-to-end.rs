@@ -1,6 +1,3 @@
-#[path = "../common.rs"]
-mod common;
-
 use std::{
     env,
     fs::{self, Permissions},
@@ -715,10 +712,11 @@ mod weston {
     use std::process::Stdio;
 
     use anyhow::Context as _;
+    use for_stdoutput_line::ForStdoutputLine as _;
     use tempfile::TempDir;
     use tracing::info;
 
-    use crate::{common::ForStdoutputLine as _, droppy_child::DroppyChild};
+    use crate::droppy_child::DroppyChild;
 
     #[derive(Debug)]
     pub(super) struct Weston {
@@ -825,9 +823,10 @@ mod dbus_session {
     use std::process::Stdio;
 
     use anyhow::Context;
+    use for_stdoutput_line::ForStdoutputLine as _;
     use tracing::info;
 
-    use crate::{common::ForStdoutputLine as _, droppy_child::DroppyChild};
+    use crate::droppy_child::DroppyChild;
 
     #[derive(Debug)]
     pub(super) struct DBusSession(#[allow(dead_code)] DroppyChild);
@@ -872,13 +871,13 @@ mod fixture {
     use std::{env, fs};
 
     use anyhow::{Context as _, bail};
+    use for_stdoutput_line::ForStdoutputLine as _;
     use indoc::formatdoc;
     use state_for_testing::TESTING_MODE;
     use tempfile::TempDir;
     use tracing::info;
 
     use crate::SERVE_PATH;
-    use crate::common::ForStdoutputLine as _;
     use crate::fixture::subject::Subject;
     use crate::script::{Script, ScriptFile};
     use crate::to_bytes::ToBytes;
