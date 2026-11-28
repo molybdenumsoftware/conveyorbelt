@@ -1,113 +1,88 @@
 [workspace]
 members = ["crates/*"]
 resolver = "3"
-
 [workspace.dependencies.anyhow]
 default-features = false
 features = ["backtrace", "std"]
 version = "*"
-
 [workspace.dependencies.chromiumoxide]
 default-features = false
 version = "*"
-
 [workspace.dependencies.clap]
 default-features = false
 features = ["derive"]
 version = "*"
-
 [workspace.dependencies.derive_more]
 default-features = false
 features = ["debug", "deref", "deref_mut", "display", "from_str"]
 version = "*"
-
 [workspace.dependencies.futures]
 default-features = false
 version = "*"
-
 [workspace.dependencies.git2]
 default-features = false
 version = "*"
-
 [workspace.dependencies.http]
 default-features = false
 version = "*"
-
 [workspace.dependencies.hyper-util]
 default-features = false
 version = "*"
-
 [workspace.dependencies.indoc]
 default-features = false
 version = "*"
-
 [workspace.dependencies.maud]
 default-features = false
 version = "*"
-
 [workspace.dependencies.nix]
 default-features = false
 features = ["signal"]
 version = "*"
-
 [workspace.dependencies.notify]
 default-features = false
-features = ["tokio", "macos_fsevent"]
+features = ["macos_fsevent", "tokio"]
 version = "*"
-
 [workspace.dependencies.process-wrap]
 default-features = false
 features = ["tokio1"]
 version = "*"
-
 [workspace.dependencies.replace_with]
 default-features = false
 features = ["std"]
 version = "*"
-
 [workspace.dependencies.serde]
 default-features = false
 version = "*"
-
 [workspace.dependencies.serde_json]
 default-features = false
 version = "*"
-
 [workspace.dependencies.static-web-server]
 default-features = false
 version = "3.0.0-beta.4"
-
 [workspace.dependencies.static_init]
 default-features = false
 version = "*"
-
 [workspace.dependencies.strip-ansi-escapes]
 default-features = false
 version = "*"
-
 [workspace.dependencies.tempfile]
 default-features = false
 version = "*"
-
 [workspace.dependencies.time]
 default-features = false
-features = ["macros", "formatting"]
+features = ["formatting", "macros"]
 version = "*"
-
 [workspace.dependencies.tokio]
 default-features = false
 features = ["io-util", "macros", "process"]
 version = "*"
-
 [workspace.dependencies.tracing]
 default-features = false
 version = "*"
-
 [workspace.dependencies.tracing-subscriber]
 default-features = false
 features = ["env-filter", "local-time"]
 version = "*"
-
 [workspace.package]
 edition = "2024"
 license = "MIT"
