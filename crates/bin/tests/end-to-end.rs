@@ -253,6 +253,7 @@ async fn ignore_hidden_files() {
         .unwrap();
 
     let mut subject = fixture.spawn_subject().unwrap();
+    subject.wait_build_success().unwrap();
     let browser = subject.connect_to_browser().await.unwrap();
     let page = browser.new_page("about:blank").await.unwrap();
 
