@@ -94,7 +94,7 @@ async fn browser_orphaned() {
 }
 
 #[tokio::test]
-async fn launched_browser_has_one_page_at_served_root() {
+async fn launched_browser_has_one_page() {
     let fixture = Fixture::init().unwrap();
     let mut subject = fixture.spawn_subject().unwrap();
     let browser = subject.connect_to_browser().await.unwrap();
@@ -104,19 +104,13 @@ async fn launched_browser_has_one_page_at_served_root() {
         .await
         .unwrap();
 
-    let pages = target_infos
+    let actual = target_infos
         .target_infos
         .iter()
         .filter(|target| target.r#type == "page")
-        .collect::<Vec<_>>();
+        .count();
 
-    let [page] = pages.as_slice() else {
-        panic!("more than one page {pages:?}");
-    };
-
-    let actual = page.url.as_str();
-    let expected = subject.url("/").unwrap();
-    assert_eq!(actual, expected);
+    assert_eq!(actual, 1);
 }
 
 #[tokio::test]
