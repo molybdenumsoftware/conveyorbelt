@@ -358,8 +358,8 @@ fn build_command_not_found() {
     assert_eq!(status.code(), Some(1));
 }
 
-#[tokio::test]
-async fn subsequent_build_failed_to_spawn() {
+#[test]
+fn subsequent_build_failed_to_spawn() {
     let fixture = Fixture::init().unwrap();
     let mut subject = fixture.spawn_subject().unwrap();
     subject.wait_build_success().unwrap();
@@ -382,8 +382,8 @@ fn subsequent_build_terminated_with_failure() {
     subject.wait_stderr("exit with 1").unwrap();
 }
 
-#[tokio::test]
-async fn build_process_restart() {
+#[test]
+fn build_process_restart() {
     let mut fixture = Fixture::init().unwrap();
     let mut subject = fixture.spawn_subject().unwrap();
     subject.wait_build_success().unwrap();
@@ -622,8 +622,8 @@ fn serve_dir_exists_after_termination() {
     assert!(std::fs::exists(state_for_testing.serve_path).unwrap())
 }
 
-#[tokio::test]
-async fn cdp_errors_are_reported() {
+#[test]
+fn cdp_errors_are_reported() {
     let fixture = Fixture::init().unwrap();
     let mut subject = fixture.spawn_subject().unwrap();
     subject.wait_browser_spawned().unwrap();
